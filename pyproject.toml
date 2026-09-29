@@ -1,0 +1,14 @@
+[project]
+name = "blender-ai-previz-director"
+version = "0.1.0"
+description = "Deterministic AI previz director companion for Blender"
+requires-python = ">=3.11"
+dependencies = ["mcp>=1.30.0,<2"]
+
+[project.scripts]
+ai-previz-bridge = "bridge.server:main"
+ai-previz-mcp = "companion_mcp.server:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+

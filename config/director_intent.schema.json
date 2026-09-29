@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Previz Director Intent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["intent_version", "operations"],
+  "properties": {
+    "intent_version": {"type": "integer", "const": 1},
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type", "target", "subject", "shot", "lens_mm", "distance",
+          "angle_degrees", "preserve_subject_framing", "speed_factor",
+          "frame_start", "frame_end", "frame_delta", "time_scale",
+          "hold_frames", "shot_id", "shot_type", "padding"
+        ],
+        "properties": {
+          "type": {"type": "string", "enum": [
+            "camera_set_lens", "camera_dolly", "camera_orbit",
+            "camera_look_at", "camera_frame_subject", "actor_retime",
+            "animation_shift", "animation_scale_time", "animation_insert_hold",
+            "shot_create", "shot_set_range", "shot_set_camera",
+            "shot_product_closeup", "shot_actor_closeup", "shot_hold",
+            "previz_undo", "previz_redo"
+          ]},
+          "target": {"type": ["string", "null"]},
+          "subject": {"type": ["string", "null"]},
+          "shot": {"type": ["string", "null"]},
+          "lens_mm": {"type": ["number", "null"]},
+          "distance": {"type": ["number", "null"]},
+          "angle_degrees": {"type": ["number", "null"]},
+          "preserve_subject_framing": {"type": ["boolean", "null"]},
+          "speed_factor": {"type": ["number", "null"]},
+          "frame_start": {"type": ["integer", "null"]},
+          "frame_end": {"type": ["integer", "null"]},
+          "frame_delta": {"type": ["number", "null"]},
+          "time_scale": {"type": ["number", "null"]},
+          "hold_frames": {"type": ["integer", "null"]},
+          "shot_id": {"type": ["string", "null"]},
+          "shot_type": {"type": ["string", "null"]},
+          "padding": {"type": ["number", "null"]}
+        }
+      }
+    }
+  }
+}
