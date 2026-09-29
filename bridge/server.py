@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -106,7 +107,8 @@ RUNTIME = {}
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "AIPrevizBridge/0.1"
+    server_version = "AIPrevizBridge/0.1.1"
+    legacy_warning_emitted = False
 
     def log_message(self, fmt, *args):
         logging.info("%s %s", self.client_address[0], fmt % args)
@@ -132,7 +134,23 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         if origin and not (origin.startswith("http://127.0.0.1") or origin.startswith("http://localhost")):
             return False
-        return secrets.compare_digest(self.headers.get("X-AI-Previz-Token", ""), RUNTIME["token"])
+        received = self.headers.get("X-AI-Previz-Token", "")
+        authorized = secrets.compare_digest(received, RUNTIME["token"])
+        legacy_blender_path = self.path.startswith(("/blender/register", "/blender/next", "/blender/result"))
+        if not authorized and not received and legacy_blender_path and self.client_address[0] in {"127.0.0.1", "::1"}:
+            if not Handler.legacy_warning_emitted:
+                logging.warning("Accepted tokenless legacy Blender client on loopback; restart Blender to restore token authentication")
+                Handler.legacy_warning_emitted = True
+            return True
+        if not authorized:
+            fingerprint = lambda value: hashlib.sha256(value.encode("utf-8")).hexdigest()[:10] if value else "empty"
+            logging.warning(
+                "Authentication mismatch path=%s received=%s expected=%s",
+                self.path,
+                fingerprint(received),
+                fingerprint(RUNTIME["token"]),
+            )
+        return authorized
 
     def _require_auth(self) -> bool:
         if self._authorized():
@@ -143,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/health":
-            self._json(200, {"ok": True, "service": "ai-previz-bridge", "version": "0.1.0"})
+            self._json(200, {"ok": True, "service": "ai-previz-bridge", "version": "0.1.1"})
             return
         if not self._require_auth():
             return

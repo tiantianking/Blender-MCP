@@ -12,14 +12,21 @@ import uuid
 
 from .dispatcher import DispatchRequest, submit
 
-APP_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "AI-Previz-Director")
+def _local_appdata() -> str:
+    configured = os.environ.get("LOCALAPPDATA")
+    if configured:
+        return configured
+    return os.path.join(os.path.expanduser("~"), "AppData", "Local")
+
+
+APP_DIR = os.path.join(_local_appdata(), "AI-Previz-Director")
 RUNTIME_PATH = os.path.join(APP_DIR, "runtime.json")
 UI_RESULTS: queue.Queue[dict] = queue.Queue()
 
 
 def load_runtime() -> dict:
     try:
-        with open(RUNTIME_PATH, "r", encoding="utf-8") as handle:
+        with open(RUNTIME_PATH, "r", encoding="utf-8-sig") as handle:
             return json.load(handle)
     except (OSError, ValueError):
         return {"host": "127.0.0.1", "port": 8765, "token": ""}

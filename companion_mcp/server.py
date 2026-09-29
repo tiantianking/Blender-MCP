@@ -2,20 +2,71 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
+import sys
+import time
 import urllib.request
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-APP_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "AI-Previz-Director"
+APP_DIR = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")) / "AI-Previz-Director"
 RUNTIME_PATH = APP_DIR / "runtime.json"
+ROOT = Path(__file__).resolve().parents[1]
 mcp = FastMCP("AI Previz Director")
 
 
 def _runtime() -> dict:
     if not RUNTIME_PATH.exists():
         raise RuntimeError("AI Previz Bridge runtime configuration is missing. Start the bridge first.")
-    return json.loads(RUNTIME_PATH.read_text(encoding="utf-8"))
+    return json.loads(RUNTIME_PATH.read_text(encoding="utf-8-sig"))
+
+
+def _ensure_bridge() -> None:
+    port = 8765
+    if RUNTIME_PATH.exists():
+        try:
+            port = int(_runtime().get("port", port))
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1):
+            return
+    except Exception:
+        pass
+    if os.name == "nt":
+        powershell = shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            raise RuntimeError("PowerShell was not found; cannot start the AI Previz Bridge")
+        subprocess.run(
+            [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "scripts" / "start_bridge.ps1")],
+            cwd=str(ROOT),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    else:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "bridge.server", "--port", str(port)],
+            cwd=str(ROOT),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        APP_DIR.mkdir(parents=True, exist_ok=True)
+        (APP_DIR / "bridge.pid").write_text(str(process.pid), encoding="ascii")
+    for _ in range(20):
+        time.sleep(0.1)
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1):
+                return
+        except Exception:
+            pass
+    raise RuntimeError("AI Previz Bridge did not start")
 
 
 def _call(method: str, payload: dict) -> dict:
@@ -131,6 +182,7 @@ def previz_export_clean(output_path: str, frame_start: int | None = None, frame_
 
 
 def main():
+    _ensure_bridge()
     mcp.run(transport="stdio")
 
 

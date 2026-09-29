@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1 - 2026-09-29
+
+- 修正 Blender 进程缺少 `LOCALAPPDATA` 时的运行配置路径回退。
+- 兼容带 BOM 的运行配置文件。
+- Companion MCP 启动时会自动检查并拉起本地 Bridge，重启 Codex 后无需手工运行脚本。
+- 为已经加载旧插件代码的 Blender 会话增加仅限回环地址、仅限内部轮询端点的兼容连接；执行和 MCP 端点仍要求令牌。
+- 新增真实 MCP 往返测试：修改焦距、读取验证、干净渲染、撤销并核对恢复。
+
 ## 0.1.0 - 2026-09-29
 
 - 初版 Blender 5.2 插件、localhost Bridge 和 Companion MCP。
