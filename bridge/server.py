@@ -107,7 +107,7 @@ RUNTIME = {}
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "AIPrevizBridge/0.1.1"
+    server_version = "AIPrevizBridge/0.2.0"
     legacy_warning_emitted = False
 
     def log_message(self, fmt, *args):
@@ -161,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/health":
-            self._json(200, {"ok": True, "service": "ai-previz-bridge", "version": "0.1.1"})
+            self._json(200, {"ok": True, "service": "ai-previz-bridge", "version": "0.2.0"})
             return
         if not self._require_auth():
             return

@@ -29,6 +29,8 @@ def save_shots(shots: list[dict]) -> None:
     for name, frame in wanted.items():
         marker = existing.get(name) or scene.timeline_markers.new(name, frame=frame)
         marker.frame = frame
+        shot = next((item for item in shots if f"PREVIZ_SHOT:{item['shot_id']}" == name), None)
+        marker.camera = bpy.data.objects.get(shot.get("camera")) if shot and shot.get("camera") else None
 
 
 def _shot_ref(reference: str | None) -> dict:

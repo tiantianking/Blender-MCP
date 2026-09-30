@@ -94,6 +94,12 @@ def previz_get_state() -> dict:
 
 
 @mcp.tool()
+def previz_set_frame(frame: int) -> dict:
+    """Set the current frame and return the resulting semantic state, including the active shot camera."""
+    return _call("set_frame", {"frame": frame})
+
+
+@mcp.tool()
 def previz_find_entity(reference: str) -> dict:
     """Resolve a semantic id, object name or alias without modifying Blender."""
     return _call("find_entity", {"reference": reference})
@@ -133,6 +139,15 @@ def camera_frame_subject(subject: str, camera: str = "current_camera", padding: 
 
 
 @mcp.tool()
+def camera_follow(subject: str, camera: str = "current_camera", offset_x: float = 0.0, offset_y: float = -6.0, offset_z: float = 3.0) -> dict:
+    """Attach a deterministic follow and look-at rig to a camera using a world-space offset."""
+    return _intent({
+        "type": "camera_follow", "target": camera, "subject": subject,
+        "offset_x": offset_x, "offset_y": offset_y, "offset_z": offset_z,
+    })
+
+
+@mcp.tool()
 def actor_retime(actor: str, speed_factor: float, frame_start: int | None = None, frame_end: int | None = None) -> dict:
     """Retime a supported non-shared Action. 0.7 means 70 percent playback speed."""
     op = {"type": "actor_retime", "target": actor, "speed_factor": speed_factor}
@@ -150,6 +165,23 @@ def shot_product_closeup(product: str, shot: str = "last", hold_frames: int | No
     if hold_frames:
         op["hold_frames"] = hold_frames
     return _intent(op)
+
+
+@mcp.tool()
+def shot_create(shot_id: str, frame_start: int, frame_end: int, camera: str = "current_camera", subject: str | None = None, shot_type: str | None = None) -> dict:
+    """Create a shot range and bind its start marker to a camera for automatic timeline switching."""
+    op = {"type": "shot_create", "shot_id": shot_id, "frame_start": frame_start, "frame_end": frame_end, "target": camera}
+    if subject:
+        op["subject"] = subject
+    if shot_type:
+        op["shot_type"] = shot_type
+    return _intent(op)
+
+
+@mcp.tool()
+def shot_set_camera(shot: str, camera: str) -> dict:
+    """Assign a different camera to a shot and its timeline marker."""
+    return _intent({"type": "shot_set_camera", "shot": shot, "target": camera})
 
 
 @mcp.tool()
@@ -179,6 +211,12 @@ def previz_export_clean(output_path: str, frame_start: int | None = None, frame_
     if frame_end is not None:
         payload["frame_end"] = frame_end
     return _call("export_clean", payload)
+
+
+@mcp.tool()
+def previz_build_tracking_demo(output_path: str) -> dict:
+    """Create and save a separate demo scene with a walking actor, moving car, follow cameras and three camera cuts."""
+    return _call("build_tracking_demo", {"output_path": output_path})
 
 
 def main():

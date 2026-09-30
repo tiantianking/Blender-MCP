@@ -29,12 +29,14 @@ def _action_summary(obj: bpy.types.Object) -> dict | None:
 
 def _camera_summary(obj: bpy.types.Object) -> dict:
     data = obj.data
+    evaluated = obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
     focus = data.dof.focus_object.name if data.dof.use_dof and data.dof.focus_object else None
     return {
         **entity_summary(obj),
         "lens_mm": data.lens,
         "sensor_width": data.sensor_width,
         "location": _vec(obj.location),
+        "evaluated_location": _vec(evaluated.matrix_world.translation),
         "rotation_euler": _vec(obj.rotation_euler),
         "dof": {"enabled": data.dof.use_dof, "focus_target": focus, "focus_distance": data.dof.focus_distance},
         "constraints": [{"name": c.name, "type": c.type, "target": getattr(c.target, "name", None)} for c in obj.constraints],

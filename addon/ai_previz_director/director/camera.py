@@ -82,3 +82,30 @@ def frame_subject(reference: str | None, subject_ref: str, padding: float = 0.15
     look_at(camera, subject)
     return {"camera": camera.name, "subject": subject.name, "distance": distance, "padding": padding}
 
+
+def follow(reference: str | None, subject_ref: str, offset=(0.0, -6.0, 3.0)) -> dict:
+    camera = _camera(reference)
+    subject = find_entity(subject_ref)
+    focus_target = bpy.data.objects.get(str(subject.get("previz_focus_object", ""))) or subject
+    for constraint in list(camera.constraints):
+        if constraint.name.startswith("AI_PREVIZ_FOLLOW_"):
+            camera.constraints.remove(constraint)
+    camera.location = Vector(tuple(float(value) for value in offset))
+    copy_location = camera.constraints.new("COPY_LOCATION")
+    copy_location.name = "AI_PREVIZ_FOLLOW_LOCATION"
+    copy_location.target = subject
+    copy_location.use_offset = True
+    track = camera.constraints.new("TRACK_TO")
+    track.name = "AI_PREVIZ_FOLLOW_TRACK"
+    track.target = focus_target
+    track.track_axis = "TRACK_NEGATIVE_Z"
+    track.up_axis = "UP_Y"
+    bpy.context.view_layer.update()
+    return {
+        "camera": camera.name,
+        "subject": subject.name,
+        "focus_target": focus_target.name,
+        "offset": [float(value) for value in offset],
+        "constraints": [copy_location.name, track.name],
+    }
+

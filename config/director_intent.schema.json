@@ -17,12 +17,12 @@
           "type", "target", "subject", "shot", "lens_mm", "distance",
           "angle_degrees", "preserve_subject_framing", "speed_factor",
           "frame_start", "frame_end", "frame_delta", "time_scale",
-          "hold_frames", "shot_id", "shot_type", "padding"
+          "hold_frames", "shot_id", "shot_type", "padding", "offset_x", "offset_y", "offset_z"
         ],
         "properties": {
           "type": {"type": "string", "enum": [
             "camera_set_lens", "camera_dolly", "camera_orbit",
-            "camera_look_at", "camera_frame_subject", "actor_retime",
+            "camera_look_at", "camera_frame_subject", "camera_follow", "actor_retime",
             "animation_shift", "animation_scale_time", "animation_insert_hold",
             "shot_create", "shot_set_range", "shot_set_camera",
             "shot_product_closeup", "shot_actor_closeup", "shot_hold",
@@ -43,7 +43,10 @@
           "hold_frames": {"type": ["integer", "null"]},
           "shot_id": {"type": ["string", "null"]},
           "shot_type": {"type": ["string", "null"]},
-          "padding": {"type": ["number", "null"]}
+          "padding": {"type": ["number", "null"]},
+          "offset_x": {"type": ["number", "null"]},
+          "offset_y": {"type": ["number", "null"]},
+          "offset_z": {"type": ["number", "null"]}
         }
       }
     }

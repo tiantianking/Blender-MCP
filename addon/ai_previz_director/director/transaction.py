@@ -33,6 +33,24 @@ def _action_snapshot(action: bpy.types.Action, slot=None) -> dict:
     return {"name": action.name, "curves": curves}
 
 
+def _constraint_snapshot(obj: bpy.types.Object) -> list[dict]:
+    result = []
+    for constraint in obj.constraints:
+        if not constraint.name.startswith("AI_PREVIZ_"):
+            continue
+        item = {
+            "type": constraint.type,
+            "name": constraint.name,
+            "target": constraint.target.name if getattr(constraint, "target", None) else None,
+            "influence": float(constraint.influence),
+        }
+        for attribute in ("use_offset", "track_axis", "up_axis"):
+            if hasattr(constraint, attribute):
+                item[attribute] = getattr(constraint, attribute)
+        result.append(item)
+    return result
+
+
 def capture_state() -> dict:
     scene = bpy.context.scene
     objects = {}
@@ -42,7 +60,7 @@ def capture_state() -> dict:
             "location": _vec(obj.location), "rotation_mode": obj.rotation_mode,
             "rotation_euler": _vec(obj.rotation_euler), "scale": _vec(obj.scale),
             "hide_viewport": obj.hide_viewport, "hide_render": obj.hide_render,
-            "props": _previz_props(obj),
+            "props": _previz_props(obj), "constraints": _constraint_snapshot(obj),
         }
         if obj.type == "CAMERA":
             item["camera"] = {
@@ -88,6 +106,17 @@ def restore_state(state: dict) -> None:
         obj.scale = item["scale"]
         obj.hide_viewport, obj.hide_render = item["hide_viewport"], item["hide_render"]
         _restore_props(obj, item.get("props", {}))
+        for constraint in list(obj.constraints):
+            if constraint.name.startswith("AI_PREVIZ_"):
+                obj.constraints.remove(constraint)
+        for constraint_state in item.get("constraints", []):
+            constraint = obj.constraints.new(constraint_state["type"])
+            constraint.name = constraint_state["name"]
+            constraint.target = bpy.data.objects.get(constraint_state.get("target"))
+            constraint.influence = constraint_state.get("influence", 1.0)
+            for attribute in ("use_offset", "track_axis", "up_axis"):
+                if attribute in constraint_state and hasattr(constraint, attribute):
+                    setattr(constraint, attribute, constraint_state[attribute])
         if obj.type == "CAMERA" and "camera" in item:
             camera = item["camera"]
             obj.data.lens, obj.data.sensor_width = camera["lens"], camera["sensor_width"]
@@ -113,6 +142,8 @@ def restore_state(state: dict) -> None:
                 kp.handle_left_type = point_state["handle_left_type"]
                 kp.handle_right_type = point_state["handle_right_type"]
             fc.update()
+    from .shot import load_shots, save_shots
+    save_shots(load_shots())
     bpy.context.view_layer.update()
 
 

@@ -29,6 +29,9 @@ def _apply(op: dict) -> dict:
         return {"camera": cam.name, "subject": subject.name}
     if kind == "camera_frame_subject":
         return camera.frame_subject(_camera_ref(op), op["subject"], op.get("padding", 0.15))
+    if kind == "camera_follow":
+        offset = (op.get("offset_x", 0.0), op.get("offset_y", -6.0), op.get("offset_z", 3.0))
+        return camera.follow(_camera_ref(op), op["subject"], offset)
     if kind == "actor_retime":
         return animation.retime_speed(op["target"], op["speed_factor"], op.get("frame_start"), op.get("frame_end"))
     if kind == "animation_shift":

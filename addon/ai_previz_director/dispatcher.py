@@ -8,6 +8,7 @@ from .director.executor import execute_intent
 from .director.context import get_previz_state
 from .director.export import capture_clean_still, export_clean_video
 from .director.semantic import entity_summary, find_entity, tag_entity
+from .director.demo import build_tracking_demo
 
 
 @dataclass
@@ -40,6 +41,12 @@ def _execute(request: DispatchRequest) -> dict:
         return {"ok": True, "result": capture_clean_still(p["output_path"])}
     if request.method == "export_clean":
         return {"ok": True, "result": export_clean_video(p["output_path"], p.get("frame_start"), p.get("frame_end"))}
+    if request.method == "build_tracking_demo":
+        return {"ok": True, "result": build_tracking_demo(p["output_path"])}
+    if request.method == "set_frame":
+        import bpy
+        bpy.context.scene.frame_set(int(p["frame"]))
+        return {"ok": True, "frame": bpy.context.scene.frame_current, "state": get_previz_state()}
     return {"ok": False, "error": f"Unknown method: {request.method}"}
 
 

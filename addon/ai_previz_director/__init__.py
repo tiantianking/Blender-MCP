@@ -1,7 +1,7 @@
 bl_info = {
     "name": "AI Previz Director",
     "author": "OpenAI Codex",
-    "version": (0, 1, 1),
+    "version": (0, 2, 0),
     "blender": (5, 2, 0),
     "location": "View3D > Sidebar > AI Previz",
     "description": "Deterministic natural-language previz director companion",
