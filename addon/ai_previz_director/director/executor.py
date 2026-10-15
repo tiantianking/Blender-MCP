@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import bpy
 
-from . import animation, camera, shot
+from . import animation, appearance, camera, shot
 from .errors import PrevizError, ValidationError
 from .intent_schema import validate_intent
 from .semantic import find_entity, entity_id
@@ -32,6 +32,8 @@ def _apply(op: dict) -> dict:
     if kind == "camera_follow":
         offset = (op.get("offset_x", 0.0), op.get("offset_y", -6.0), op.get("offset_z", 3.0))
         return camera.follow(_camera_ref(op), op["subject"], offset)
+    if kind == "material_set_color":
+        return appearance.set_color(op["target"], op["red"], op["green"], op["blue"])
     if kind == "actor_retime":
         return animation.retime_speed(op["target"], op["speed_factor"], op.get("frame_start"), op.get("frame_end"))
     if kind == "animation_shift":
@@ -65,8 +67,12 @@ def execute_intent(intent: dict, user_prompt: str = "") -> dict:
     validate_intent(intent)
     operations = intent["operations"]
     if operations[0]["type"] == "previz_undo":
+        if not MANAGER.undo_stack:
+            return {"ok": True, "message": "当前没有可撤销的操作", "transaction": {}, "results": []}
         return {"ok": True, "transaction": MANAGER.undo(), "results": []}
     if operations[0]["type"] == "previz_redo":
+        if not MANAGER.redo_stack:
+            return {"ok": True, "message": "当前没有可重做的操作", "transaction": {}, "results": []}
         return {"ok": True, "transaction": MANAGER.redo(), "results": []}
     tx = MANAGER.prepare(user_prompt, intent)
     tx.status = "APPLIED"
@@ -86,4 +92,3 @@ def execute_intent(intent: dict, user_prompt: str = "") -> dict:
         if isinstance(exc, PrevizError):
             raise
         raise PrevizError(str(exc)) from exc
-

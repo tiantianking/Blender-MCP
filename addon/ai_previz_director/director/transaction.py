@@ -72,6 +72,14 @@ def capture_state() -> dict:
         if ad and ad.action and ad.action.name not in actions:
             actions[ad.action.name] = _action_snapshot(ad.action, getattr(ad, "action_slot", None))
         objects[obj.name] = item
+    materials = {}
+    for material in bpy.data.materials:
+        base_color = None
+        if material.use_nodes and material.node_tree:
+            principled = next((node for node in material.node_tree.nodes if node.type == "BSDF_PRINCIPLED"), None)
+            if principled and "Base Color" in principled.inputs:
+                base_color = _vec(principled.inputs["Base Color"].default_value)
+        materials[material.name] = {"diffuse_color": _vec(material.diffuse_color), "base_color": base_color}
     return {
         "scene": {
             "frame_current": scene.frame_current, "frame_start": scene.frame_start, "frame_end": scene.frame_end,
@@ -79,6 +87,7 @@ def capture_state() -> dict:
         },
         "objects": objects,
         "actions": actions,
+        "materials": materials,
     }
 
 
@@ -96,6 +105,19 @@ def restore_state(state: dict) -> None:
     scene.frame_set(int(ss["frame_current"]))
     scene.camera = bpy.data.objects.get(ss["camera"]) if ss.get("camera") else None
     _restore_props(scene, ss.get("props", {}))
+
+    missing = [name for name in state["objects"] if name not in bpy.data.objects]
+    if missing:
+        raise ValidationError(
+            f"无法通过普通事务恢复状态：对象 {missing} 已在操作中被删除。"
+            "结构化事务不支持重建任意已删除对象，需使用完整工程恢复点（.blend检查点）进行恢复。"
+        )
+
+    # Remove objects created after snapshot
+    for obj in list(bpy.data.objects):
+        if obj.name not in state["objects"]:
+            bpy.data.objects.remove(obj, do_unlink=True)
+
     for name, item in state["objects"].items():
         obj = bpy.data.objects.get(name)
         if not obj:
@@ -142,6 +164,15 @@ def restore_state(state: dict) -> None:
                 kp.handle_left_type = point_state["handle_left_type"]
                 kp.handle_right_type = point_state["handle_right_type"]
             fc.update()
+    for material_name, material_state in state.get("materials", {}).items():
+        material = bpy.data.materials.get(material_name)
+        if not material:
+            continue
+        material.diffuse_color = material_state["diffuse_color"]
+        if material_state.get("base_color") and material.use_nodes and material.node_tree:
+            principled = next((node for node in material.node_tree.nodes if node.type == "BSDF_PRINCIPLED"), None)
+            if principled and "Base Color" in principled.inputs:
+                principled.inputs["Base Color"].default_value = material_state["base_color"]
     from .shot import load_shots, save_shots
     save_shots(load_shots())
     bpy.context.view_layer.update()
@@ -157,6 +188,9 @@ class Transaction:
     after_state: dict | None
     timestamp: float
     validation_result: dict | None = None
+    checkpoint_path: str | None = None
+    task_id: str | None = None
+    is_checkpoint_backed: bool = False
 
     def summary(self) -> dict:
         return {k: v for k, v in asdict(self).items() if k not in {"before_state", "after_state"}}
@@ -167,8 +201,25 @@ class TransactionManager:
         self.undo_stack: list[Transaction] = []
         self.redo_stack: list[Transaction] = []
 
-    def prepare(self, prompt: str, intent: dict) -> Transaction:
-        return Transaction(str(uuid.uuid4()), prompt, intent, "PREPARED", capture_state(), None, time.time())
+    def prepare(
+        self,
+        prompt: str,
+        intent: dict,
+        task_id: str | None = None,
+        checkpoint_path: str | None = None,
+    ) -> Transaction:
+        return Transaction(
+            str(uuid.uuid4()),
+            prompt,
+            intent,
+            "PREPARED",
+            capture_state(),
+            None,
+            time.time(),
+            checkpoint_path=checkpoint_path,
+            task_id=task_id,
+            is_checkpoint_backed=bool(checkpoint_path),
+        )
 
     def commit(self, tx: Transaction, validation: dict) -> Transaction:
         tx.after_state = capture_state()
@@ -205,4 +256,3 @@ class TransactionManager:
 
 
 MANAGER = TransactionManager()
-

@@ -9,6 +9,7 @@ ALLOWED = {
     "camera_look_at": ({"target", "subject"}, {"subject"}),
     "camera_frame_subject": ({"target", "subject", "padding"}, {"subject"}),
     "camera_follow": ({"target", "subject", "offset_x", "offset_y", "offset_z"}, {"subject"}),
+    "material_set_color": ({"target", "red", "green", "blue"}, {"target", "red", "green", "blue"}),
     "actor_retime": ({"target", "speed_factor", "frame_start", "frame_end"}, {"target", "speed_factor"}),
     "animation_shift": ({"target", "frame_delta", "frame_start", "frame_end"}, {"target", "frame_delta"}),
     "animation_scale_time": ({"target", "time_scale", "frame_start", "frame_end"}, {"target", "time_scale"}),
@@ -68,7 +69,9 @@ def _validate_values(index: int, op: dict) -> None:
     number("offset_x", -10000, 10000)
     number("offset_y", -10000, 10000)
     number("offset_z", -10000, 10000)
+    number("red", 0, 1)
+    number("green", 0, 1)
+    number("blue", 0, 1)
     number("hold_frames", 1, 10000)
     if "frame_start" in op and "frame_end" in op and op["frame_end"] < op["frame_start"]:
         raise ValidationError(f"operation {index} frame_end precedes frame_start")
-

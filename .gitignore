@@ -5,4 +5,7 @@ logs/*.log
 config/runtime.json
 outputs/
 tests/artifacts/
+.pytest_cache/
+*.blend1
+*.blend@
 

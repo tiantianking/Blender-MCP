@@ -22,7 +22,13 @@ class QuickParserTests(unittest.TestCase):
     def test_undo(self):
         self.assertEqual(compile_quick("撤销刚才修改", CONTEXT)["operations"][0]["type"], "previz_undo")
 
+    def test_material_color_by_alias(self):
+        context = {"actors": [], "products": [], "entities": [{"id": "car_red", "name": "CAR_Red", "aliases": ["汽车", "红车"]}]}
+        operation = compile_quick("汽车改成绿色", context)["operations"][0]
+        self.assertEqual(operation["type"], "material_set_color")
+        self.assertEqual(operation["target"], "car_red")
+        self.assertGreater(operation["green"], operation["red"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

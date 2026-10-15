@@ -7,6 +7,7 @@ import logging
 import os
 import queue
 import secrets
+import socket
 import threading
 import time
 import uuid
@@ -16,6 +17,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from adapters.codex_adapter import CodexAdapter
+from adapters.blender_agent import BlenderAgentAdapter
+from adapters.gemini_agent import GeminiBlenderAgentAdapter
 from adapters.quick_parser import compile_quick
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,11 +106,43 @@ class Broker:
 
 BROKER = Broker()
 ADAPTER = CodexAdapter(ROOT)
+AGENT = BlenderAgentAdapter(ROOT)
+GEMINI_AGENT = GeminiBlenderAgentAdapter(ROOT)
 RUNTIME = {}
+
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".exr", ".hdr"}
+
+
+def validate_reference_image(value: str | None) -> str | None:
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        raise ValueError("参考图必须使用绝对路径")
+    if not path.is_file():
+        raise ValueError(f"找不到参考图：{path}")
+    if path.suffix.lower() not in IMAGE_EXTENSIONS:
+        raise ValueError(f"不支持的参考图格式：{path.suffix}")
+    return str(path.resolve())
+
+
+def new_checkpoint_path() -> Path:
+    directory = APP_DIR / "checkpoints"
+    directory.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    return directory / f"previz-{stamp}-{uuid.uuid4().hex[:8]}.blend"
+
+
+def blender_mcp_is_listening() -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", 9876), timeout=0.3):
+            return True
+    except OSError:
+        return False
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "AIPrevizBridge/0.2.0"
+    server_version = "AIPrevizBridge/0.4.0"
     legacy_warning_emitted = False
 
     def log_message(self, fmt, *args):
@@ -136,10 +171,27 @@ class Handler(BaseHTTPRequestHandler):
             return False
         received = self.headers.get("X-AI-Previz-Token", "")
         authorized = secrets.compare_digest(received, RUNTIME["token"])
-        legacy_blender_path = self.path.startswith(("/blender/register", "/blender/next", "/blender/result"))
-        if not authorized and not received and legacy_blender_path and self.client_address[0] in {"127.0.0.1", "::1"}:
+        # Older Blender sessions can keep the pre-token rpc_client module in
+        # memory even after the installed add-on has been upgraded.  The bridge
+        # only listens on loopback, so keep those already-running panels usable
+        # until Blender is restarted.  A non-empty but incorrect token is still
+        # rejected.
+        legacy_loopback_path = self.path.startswith(
+            (
+                "/blender/register",
+                "/blender/next",
+                "/blender/result",
+                "/status",
+                "/execute",
+                "/compile",
+                "/director",
+                "/cancel",
+                "/logs",
+            )
+        )
+        if not authorized and not received and legacy_loopback_path and self.client_address[0] in {"127.0.0.1", "::1"}:
             if not Handler.legacy_warning_emitted:
-                logging.warning("Accepted tokenless legacy Blender client on loopback; restart Blender to restore token authentication")
+                logging.warning("Accepted tokenless legacy panel client on loopback; restart Blender to restore token authentication")
                 Handler.legacy_warning_emitted = True
             return True
         if not authorized:
@@ -161,7 +213,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/health":
-            self._json(200, {"ok": True, "service": "ai-previz-bridge", "version": "0.2.0"})
+            self._json(200, {"ok": True, "service": "ai-previz-bridge", "version": "0.4.0"})
             return
         if not self._require_auth():
             return
@@ -206,17 +258,56 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/compile":
                 context = payload.get("context") or BROKER.submit("get_state", {}, 15).get("state", {})
-                intent = compile_quick(payload["prompt"], context) if payload.get("mode") == "quick" else None
+                quick_mode = payload.get("mode") == "quick"
+                intent = compile_quick(payload["prompt"], context) if quick_mode else None
+                if quick_mode and not intent:
+                    self._json(422, {"ok": False, "error": "Quick 模式不支持这条指令，请改用 Director 模式"})
+                    return
                 intent = intent or ADAPTER.compile_intent(payload["prompt"], context, payload.get("screenshot"))
                 self._json(200, {"ok": True, "intent": intent})
                 return
             if parsed.path == "/execute":
+                if payload.get("mode") == "director":
+                    backend = payload.get("agent", "codex")
+                    if backend not in {"codex", "gemini"}:
+                        self._json(400, {"ok": False, "error": f"Unknown agent backend: {backend}"})
+                        return
+                    with BROKER.mutation_lock:
+                        reference_image = validate_reference_image(payload.get("reference_image"))
+                        stage = payload.get("workflow_stage", "single")
+                        if stage not in {"single", "layout", "detail", "finish"}:
+                            raise ValueError(f"未知任务阶段：{stage}")
+                        if not blender_mcp_is_listening():
+                            mcp_status = BROKER.submit("ensure_blender_mcp", {}, 30)
+                            if not mcp_status.get("ok") or not blender_mcp_is_listening():
+                                raise RuntimeError(
+                                    "Blender MCP 未运行。请点击 MCP for Blender 面板中的 Start MCP Server；"
+                                    "若按钮无效，请重启 Blender 以加载自动恢复功能。"
+                                )
+                        checkpoint_path = new_checkpoint_path()
+                        checkpoint = BROKER.submit(
+                            "create_checkpoint",
+                            {"output_path": str(checkpoint_path)},
+                            300,
+                        )
+                        if not checkpoint.get("ok"):
+                            raise RuntimeError(checkpoint.get("error", "创建恢复点失败"))
+                        result = (GEMINI_AGENT if backend == "gemini" else AGENT).execute(
+                            payload["prompt"],
+                            reference_image=reference_image,
+                            stage=stage,
+                        )
+                        result["checkpoint"] = checkpoint.get("checkpoint", str(checkpoint_path))
+                    self._json(200, result)
+                    return
                 with BROKER.mutation_lock:
                     context_result = BROKER.submit("get_state", {}, 15)
                     if not context_result.get("ok"):
                         raise RuntimeError(context_result.get("error", "Failed to read Blender state"))
-                    intent = compile_quick(payload["prompt"], context_result["state"]) if payload.get("mode") == "quick" else None
-                    intent = intent or ADAPTER.compile_intent(payload["prompt"], context_result["state"], payload.get("screenshot"))
+                    intent = compile_quick(payload["prompt"], context_result["state"])
+                    if not intent:
+                        self._json(422, {"ok": False, "error": "Quick 模式不支持这条指令，请改用 Director 模式"})
+                        return
                     result = BROKER.submit("execute_intent", {"intent": intent, "prompt": payload["prompt"]}, 60)
                 self._json(200 if result.get("ok") else 422, {**result, "intent": intent})
                 return
@@ -251,4 +342,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

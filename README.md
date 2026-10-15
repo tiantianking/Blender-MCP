@@ -1,64 +1,97 @@
 # AI Previz Director for Blender 5.2
 
-一个本机优先的 Blender 预演控制层。它把自然语言先编译成受限 JSON Intent，再由 Blender 主线程执行；不会让模型直接运行任意 Python。现有 `MCP for Blender` 会保留，两套能力可并存。
+本机优先的 Blender 预演控制层与 Agent 结构化工具体系。Quick 把常用自然语言编译成受限 JSON Intent；Director Agent 为 Codex / Antigravity Gemini 等 AI Agent 提供高可靠、结构化、支持原子回滚的 Blender 场景搭建、修改与核验工具集。
 
-## 当前能力
+---
 
-- 用持久语义标签识别演员、产品、摄影机和别名。
-- 设置焦距、推拉、环绕、看向主体、自动构图。
-- 为人物、汽车或其他语义对象建立持续跟拍与看向约束。
-- 对受支持的 Action 做移动、缩放时间、变速和停顿。
-- 创建及修改镜头段，制作人物或产品特写。
-- 把镜头段绑定到时间线摄影机标记，播放和渲染时自动切换机位。
-- 原子事务、验证失败回滚、Director 撤销/重做。
-- 输出无 UI 的摄影机静帧和 H.264 MP4。
-- Blender 侧边栏、localhost Bridge 和 13 个 Companion MCP 工具。
+## 核心架构与工具能力
 
-## 使用
+### 1. 结构化场景树与层级拓扑 (P0)
+- `previz_get_scene_graph(cursor, limit, collection, include_hidden, include_materials)`:
+  - **分页与防截断**：基于稳定游标与确定性排序分页（默认单页 200 项，支持 1~1000 项），返回 `total`、`cursor`、`next_cursor` 与明确的 `truncated` 标志，杜绝大型城市场景中对象静默遗漏。
+  - **丰富对象元数据**：每个对象均输出稳定引用、名称、类型、父级对象（Parent）、直接子级列表（Children）、所属集合列表（Collections）、本地位置/旋转/缩放、世界变换矩阵（4x4）、对象尺寸、世界空间 AABB 包围盒（含 `min`、`max`、`center`、`size`）、可见性状态、材质列表、网格顶点与多边形面数，以及持久语义标签。
 
-1. 如桥接未运行，在 PowerShell 执行：
+### 2. 通用安全变换与批量原子执行 (P0)
+- `previz_set_object_transform(reference, location, rotation, scale, mode, space, keyframe, frame)`:
+  - **灵活引用**：支持 Blender 对象名、持久语义 ID（如 `actor_girl_01`）或中文父级名称。
+  - **世界 / 本地坐标系解算**：支持 `absolute` 与 `relative` 模式。针对有父级绑定的子对象（Parented Objects），写入世界坐标时自动逆向求解局部坐标，确保父子关系、约束和骨骼不受破坏。
+  - **可选打帧**：支持指定帧或当前帧的安全关键帧记录（`keyframe=True`）。
+- `previz_batch_transform(changes)`:
+  - **全量前置校验**：执行前必须通过全部目标对象的存在性与参数合法性检查；任一目标非法时立即中止。
+  - **原子失败回滚**：进入 Director 事务机制，若执行失败立即将所有已变动对象精确还原回原世界/本地变换。
 
+### 3. 多视角视觉核验 (P0)
+- `previz_capture_views(views, camera, output_dir)`:
+  - **五视角全景核验**：自动批量捕获 `top`（顶视）、`front`（前视）、`right`（侧视）、`perspective`（透视）及 `camera`（当前或指定相机视角）。
+  - **非侵入式渲染**：采用轻量级 Workbench 引擎进行清晰无 UI 静帧渲染，计算场景整体包围盒自适应机位距离，完全兼容后台 Headless 运行模式。
+  - **严格现场恢复**：渲染完成后在 `finally` 块中立即恢复用户的原始相机、分辨率、帧号与渲染引擎，绝不扰乱工作区 UI。
+- `previz_set_viewport_view(view, camera)`:
+  - 在交互界面中安全调整 3D 视图方位。
+
+### 4. 集合管理、对象复制与资产导入 (P1)
+- `previz_collection_create(name, parent_collection)`: 幂等创建或获取集合，支持指定父集合层级。
+- `previz_collection_move_objects(objects, target_collection)`: 批量移动对象至指定集合，自动解除原集合关联。
+- `previz_collection_set_visibility(collection, hide_viewport, hide_render)`: 切换集合的视口与渲染可见性。
+- `previz_duplicate_object(reference, linked, name, collection)`: 明确区分关联复制（`linked=True`，共享 Mesh 数据块）与独立深拷贝（`linked=False`，独立深复制 Mesh 数据块）。
+- `previz_import_file(filepath, collection, parent_name)`:
+  - **白名单限制**：严格仅支持 `.glb`、`.gltf`、`.fbx`、`.obj`、`.usd`、`.usda`、`.usdc` 格式的绝对路径导入。
+  - **隔离与归类**：导入资产自动分配至目标集合。
+  - **中文顶层父级**：支持传入 `parent_name`（如 `父级_校车`、`父级_建筑群`），自动将导入根对象挂接在独立顶层 Empty 下，严禁篡改内部骨骼、材质、约束和子构件原始命名。
+
+### 5. 材质与贴图平铺控制 (P1)
+- `previz_set_texture_tiling(target, scale_x, scale_y, rotation_degrees, mapping_mode, material_slot)`:
+  - 支持 Principled BSDF 材质与已有的 Mapping 节点。
+  - 自动检测并安全链接 `Texture Coordinate` -> `Mapping` -> `Image Texture`。
+  - 仅修改目标材质槽，非破坏性输出修改前后的节点名、旧数值与新数值。
+
+### 6. 统一任务状态与进度跟踪 (P1)
+- `previz_get_task_status(task_id)`:
+  - 针对 Poly Haven、Poly Pizza、Sketchfab 及 3D 生成器任务，统一生命周期阶段：`queued` / `downloading` / `importing` / `verifying` / `succeeded` / `failed` / `cancelled`。
+  - 提供已耗时、真实百分比进度（不可获取时明确为 `unknown`，严禁伪造进度）、错误类型与可重试次数计数。
+
+---
+
+## 恢复边界与双层容灾机制
+
+系统严格区分两类性质完全不同的恢复能力：
+
+1. **结构化操作事务回滚 (Transaction Rollback)**:
+   - 适用于变换（Transform）、集合（Collection）、复制（Duplicate）、材质调整等受控操作。
+   - 记录 `before_state` 与 `after_state` 快照。验证或操作失败时在内存中自动恢复，用户无需重新打开文件。
+   - **已删除对象拦截保护**：常规事务无法凭空重建任意被删除网格的几何拓扑。若操作中存在已删除对象，事务回滚将明确报错阻断，并提示用户切换至完整工程恢复点。
+2. **完整工程恢复点 (Full Project Checkpoint)**:
+   - 适用于外部模型导入、复杂跨阶段 Agent 自动化操作或高风险变更。
+   - 每次任务前自动使用 `save_as_mainfile(copy=True)` 导出独立 `.blend` 副本，记录时间戳、路径与任务 ID。
+   - **强确认安全底线**：恢复工程涉及重载整份工程文件，属于高影响动作，**必须由用户在 Blender 侧边栏面板中手动确认后恢复**，严禁 Agent 静默执行 `bpy.ops.wm.open_mainfile`。
+
+---
+
+## 隐私与安全边界 (Security & Safety)
+
+1. **环回监听与鉴权**：本地 Bridge 仅监听 `127.0.0.1`，所有外部请求必须携带 `X-AI-Previz-Token` 认证头，禁止暴露给公网。
+2. **零敏感泄漏**：日志与通信载荷中脱敏处理，绝不暴露用户系统账号、Token、API Key 或工作区非相关路径。
+3. **危险 API 防御**：
+   - 严禁调用 `bpy.ops.wm.read_factory_settings`、`read_homefile`、`open_mainfile`、`revert_mainfile`、`quit_blender`、`addon_disable`。
+   - 严禁注销插件或通过工厂模式清空用户场景。
+   - 严禁通过 `.blend` 格式导入直接替换当前打开的工程。
+4. **沙箱边界如实声明**：静态 AST 分析与关键词过滤无法 100% 阻止 Python 动态反射（如 `getattr`、动态 `exec`）。系统通过受控的高频结构化工具全面覆盖 Agent 的操作面，最大限度减少对裸 `execute_blender_code` 的依赖。
+
+---
+
+## 自动化测试与验证
+
+本项目所有测试均遵循安全隔离标准，采用后台 `factory-startup` 临时场景运行，绝不触碰用户当前打开的实际工程：
+
+1. **单元测试套件**：
    ```powershell
-   & 'D:\123codex\2026-09-29\b\blender-ai-previz-director\scripts\start_bridge.ps1'
+   $env:PYTHONPATH="D:\123codex\2026-09-29\b\blender-ai-previz-director\.venv\Lib\site-packages;D:\123codex\2026-09-29\b\blender-ai-previz-director"
+   pytest tests/unit
    ```
-
-2. 打开 Blender，在 3D 视图按 `N`，进入 `AI Previz` 页签。
-3. 简单指令选 `Quick`；多步骤指令选 `Director`。
-
-示例：
-
-- `把当前摄影机焦距改成 50mm`
-- `镜头向右环绕女孩 30 度`
-- `把女孩行走动画调整为原速度的 70%`
-- `最后一个镜头改成耳机盒特写，并延长 12 帧`
-
-首次操作未标记的对象时，Agent 可先调用 `previz_tag_entity`。稳定 ID 应保持不变，例如 `actor_girl_01`、`product_earbud_case`。
-
-## Agent 接口
-
-Codex 中已注册 `ai-previz-director` MCP，提供：状态读取、实体查找/标记、摄影机控制、演员变速、产品特写、撤销/重做、干净静帧和视频导出。复杂自然语言也可从 Blender 面板走 Director 编译器。
-
-## 检查与卸载
-
-```powershell
-& 'D:\123codex\2026-09-29\b\blender-ai-previz-director\scripts\health_check.ps1'
-& 'D:\123codex\2026-09-29\b\blender-ai-previz-director\scripts\uninstall.ps1'
-```
-
-卸载脚本会关闭插件、移除 MCP 注册并停止 Bridge；插件目录会改名保留，便于恢复。
-
-## 已知边界
-
-- `camera_orbit` 当前是确定性改位；连续跟拍使用 `camera_follow`，动画环绕轨迹仍需后续支持。
-- Action 变速适用于普通、非共享的 Action；NLA、驱动器、共享 Action、链接库和复杂程序化 Rig 会被拒绝或需要后续适配。
-- 镜头段目前以场景自定义数据和时间线标记保存，不等同于完整剪辑系统。
-- Director 模式会调用本机 Codex，速度和可用性取决于当前登录及额度；Quick 模式不依赖模型调用。
-
-## 项目结构
-
-- `addon/ai_previz_director/`：Blender 插件、主线程调度与确定性执行器。
-- `bridge/`：仅监听 `127.0.0.1` 的带令牌桥接服务。
-- `adapters/`：快捷解析器与隔离的 Codex Intent 编译器。
-- `companion_mcp/`：供 Agent 直接调用的细粒度 MCP。
-- `tests/`：单元、Blender 5.2、重载、视频和 MCP 握手测试。
-
+2. **Blender 后台综合 Smoke 测试**（验证 200+ 对象拓扑、分页完整性、父子变换、原子批量失败、5视角渲染、事务回滚、检查点与危险拦截）：
+   ```powershell
+   & 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' --background --factory-startup --python tests/blender/test_structured_tools_smoke.py
+   ```
+3. **全流程 MVP 回归测试**：
+   ```powershell
+   & 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' --background --factory-startup --python tests/blender/test_mvp.py
+   ```

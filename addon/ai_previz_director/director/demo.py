@@ -15,7 +15,7 @@ def _material(name: str, color: tuple[float, float, float, float]):
     material = bpy.data.materials.new(name)
     material.diffuse_color = color
     material.use_nodes = True
-    principled = material.node_tree.nodes.get("Principled BSDF")
+    principled = next((node for node in material.node_tree.nodes if node.type == "BSDF_PRINCIPLED"), None)
     if principled:
         principled.inputs["Base Color"].default_value = color
         principled.inputs["Roughness"].default_value = 0.55

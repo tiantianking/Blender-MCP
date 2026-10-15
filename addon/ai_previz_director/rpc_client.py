@@ -44,7 +44,12 @@ def _request(method: str, path: str, payload: dict | None = None, timeout: float
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Bridge HTTP {exc.code}: {body}") from exc
+        try:
+            payload = json.loads(body)
+            message = payload.get("error") or payload.get("message")
+        except ValueError:
+            message = None
+        raise RuntimeError(message or f"Bridge 请求失败（HTTP {exc.code}）") from exc
 
 
 class BridgeClient:
@@ -76,26 +81,44 @@ class BridgeClient:
     def _run(self):
         while not self.stop_event.is_set():
             try:
-                _request("POST", "/blender/register", {"client_id": self.client_id}, 3)
-                self.connected = True
                 query = urllib.parse.urlencode({"client_id": self.client_id})
                 item = _request("GET", f"/blender/next?{query}", timeout=3)
+                self.connected = True
                 if item:
                     submit(DispatchRequest(item["request_id"], item["method"], item.get("payload", {}), lambda result, rid=item["request_id"]: self._post_result(rid, result)))
+                    self.stop_event.wait(0.02)
+                else:
+                    self.stop_event.wait(0.2)
             except Exception:
                 self.connected = False
-                time.sleep(1.0)
+                self.stop_event.wait(1.0)
 
 
 CLIENT = BridgeClient()
 
 
-def send_prompt_async(prompt: str, mode: str):
+def send_prompt_async(
+    prompt: str,
+    mode: str,
+    agent: str = "codex",
+    reference_image: str = "",
+    workflow_stage: str = "single",
+):
     def worker():
         try:
-            result = _request("POST", "/execute", {"prompt": prompt, "mode": mode}, timeout=180)
+            result = _request(
+                "POST",
+                "/execute",
+                {
+                    "prompt": prompt,
+                    "mode": mode,
+                    "agent": agent,
+                    "reference_image": reference_image,
+                    "workflow_stage": workflow_stage,
+                },
+                timeout=1200,
+            )
             UI_RESULTS.put(result or {"ok": False, "error": "Empty bridge response"})
         except Exception as exc:
             UI_RESULTS.put({"ok": False, "error": str(exc)})
     threading.Thread(target=worker, name="AI-Previz-Prompt", daemon=True).start()
-

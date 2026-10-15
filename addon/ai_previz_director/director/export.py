@@ -51,14 +51,17 @@ def capture_clean_still(output_path: str) -> dict:
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     old_path = scene.render.filepath
     old_format = scene.render.image_settings.file_format
+    old_color_mode = scene.render.image_settings.color_mode
     preview_state = _prepare_preview(scene)
     try:
         scene.render.filepath = output_path
         scene.render.image_settings.file_format = "PNG"
+        scene.render.image_settings.color_mode = "RGB"
         bpy.ops.render.render(write_still=True)
     finally:
         scene.render.filepath = old_path
         scene.render.image_settings.file_format = old_format
+        scene.render.image_settings.color_mode = old_color_mode
         _restore_preview(scene, preview_state)
     return {"path": output_path, "exists": os.path.exists(output_path), "kind": "clean_still"}
 
@@ -70,6 +73,7 @@ def export_clean_video(output_path: str, frame_start: int | None = None, frame_e
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     old = {
         "filepath": scene.render.filepath, "file_format": scene.render.image_settings.file_format,
+        "color_mode": scene.render.image_settings.color_mode,
         "start": scene.frame_start, "end": scene.frame_end,
         "container": scene.render.ffmpeg.format, "codec": scene.render.ffmpeg.codec,
     }
@@ -79,6 +83,7 @@ def export_clean_video(output_path: str, frame_start: int | None = None, frame_e
             scene.frame_start = int(frame_start)
         if frame_end is not None:
             scene.frame_end = int(frame_end)
+        scene.render.image_settings.color_mode = "RGB"
         try:
             scene.render.filepath = os.path.splitext(output_path)[0]
             scene.render.image_settings.file_format = "FFMPEG"
@@ -110,8 +115,8 @@ def export_clean_video(output_path: str, frame_start: int | None = None, frame_e
     finally:
         scene.render.filepath = old["filepath"]
         scene.render.image_settings.file_format = old["file_format"]
+        scene.render.image_settings.color_mode = old["color_mode"]
         scene.frame_start, scene.frame_end = old["start"], old["end"]
         scene.render.ffmpeg.format, scene.render.ffmpeg.codec = old["container"], old["codec"]
         _restore_preview(scene, preview_state)
     return {"path": actual, "exists": os.path.exists(actual), "kind": "clean_video"}
-

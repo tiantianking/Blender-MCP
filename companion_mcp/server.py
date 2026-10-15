@@ -88,9 +88,9 @@ def _intent(operation: dict, prompt: str = "MCP structured operation") -> dict:
 
 
 @mcp.tool()
-def previz_get_state() -> dict:
+def previz_get_state(detail_ids: list[str] | None = None) -> dict:
     """Return compact semantic previz state, including all tagged actors, products, cameras and shots."""
-    return _call("get_state", {})
+    return _call("get_state", {"detail_ids": detail_ids or []})
 
 
 @mcp.tool()
@@ -145,6 +145,12 @@ def camera_follow(subject: str, camera: str = "current_camera", offset_x: float 
         "type": "camera_follow", "target": camera, "subject": subject,
         "offset_x": offset_x, "offset_y": offset_y, "offset_z": offset_z,
     })
+
+
+@mcp.tool()
+def material_set_color(target: str, red: float, green: float, blue: float) -> dict:
+    """Set the render material color of a semantic object and its mesh children using RGB values from 0 to 1."""
+    return _intent({"type": "material_set_color", "target": target, "red": red, "green": green, "blue": blue})
 
 
 @mcp.tool()
@@ -214,6 +220,156 @@ def previz_export_clean(output_path: str, frame_start: int | None = None, frame_
 
 
 @mcp.tool()
+def previz_get_scene_graph(
+    cursor: str | None = None,
+    limit: int = 200,
+    collection: str | None = None,
+    include_hidden: bool = True,
+    include_materials: bool = False,
+) -> dict:
+    """Query complete scene tree with pagination, hierarchy (parent/children), collections, world transform, AABB bounds and semantic tags."""
+    return _call("get_scene_graph", {
+        "cursor": cursor,
+        "limit": limit,
+        "collection": collection,
+        "include_hidden": include_hidden,
+        "include_materials": include_materials,
+    })
+
+
+@mcp.tool()
+def previz_set_object_transform(
+    reference: str,
+    location: list[float] | None = None,
+    rotation: list[float] | None = None,
+    scale: list[float] | None = None,
+    mode: str = "absolute",
+    space: str = "world",
+    keyframe: bool = False,
+    frame: int | None = None,
+) -> dict:
+    """Safely transform an object in world or local space. Correctly calculates parented object coordinates and supports transactional rollback."""
+    return _call("set_object_transform", {
+        "reference": reference,
+        "location": location,
+        "rotation": rotation,
+        "scale": scale,
+        "mode": mode,
+        "space": space,
+        "keyframe": keyframe,
+        "frame": frame,
+    })
+
+
+@mcp.tool()
+def previz_batch_transform(changes: list[dict]) -> dict:
+    """Atomically apply multiple transforms. Validates all targets upfront; rolls back completely on any failure."""
+    return _call("batch_transform", {"changes": changes})
+
+
+@mcp.tool()
+def previz_capture_views(
+    views: list[str] | None = None,
+    camera: str | None = None,
+    output_dir: str | None = None,
+) -> dict:
+    """Render multi-angle clean viewport screenshots (top, front, right, perspective, camera) without disrupting user UI."""
+    return _call("capture_views", {
+        "views": views or ["top", "front", "right", "perspective", "camera"],
+        "camera": camera,
+        "output_dir": output_dir,
+    })
+
+
+@mcp.tool()
+def previz_set_viewport_view(view: str, camera: str | None = None) -> dict:
+    """Orient the 3D viewport or camera to top, front, right, perspective, or camera view."""
+    return _call("set_viewport_view", {"view": view, "camera": camera})
+
+
+@mcp.tool()
+def previz_collection_create(name: str, parent_collection: str | None = None) -> dict:
+    """Create a new collection or retrieve an existing one and link to parent or scene root."""
+    return _call("collection_create", {"name": name, "parent_collection": parent_collection})
+
+
+@mcp.tool()
+def previz_collection_move_objects(objects: list[str], target_collection: str) -> dict:
+    """Move objects to a target collection, unlinking them from their prior collections."""
+    return _call("collection_move_objects", {"objects": objects, "target_collection": target_collection})
+
+
+@mcp.tool()
+def previz_collection_set_visibility(
+    collection: str,
+    hide_viewport: bool | None = None,
+    hide_render: bool | None = None,
+) -> dict:
+    """Control viewport and render visibility for a collection."""
+    return _call("collection_set_visibility", {
+        "collection": collection,
+        "hide_viewport": hide_viewport,
+        "hide_render": hide_render,
+    })
+
+
+@mcp.tool()
+def previz_duplicate_object(
+    reference: str,
+    linked: bool = False,
+    name: str | None = None,
+    collection: str | None = None,
+) -> dict:
+    """Duplicate an object with explicit distinction between linked copy and full deep copy."""
+    return _call("duplicate_object", {
+        "reference": reference,
+        "linked": linked,
+        "name": name,
+        "collection": collection,
+    })
+
+
+@mcp.tool()
+def previz_import_file(
+    filepath: str,
+    collection: str | None = None,
+    parent_name: str | None = None,
+) -> dict:
+    """Safely import 3D files (glb, gltf, fbx, obj, usd) into a collection with optional top-level Chinese parent grouping."""
+    return _call("import_file", {
+        "filepath": filepath,
+        "collection": collection,
+        "parent_name": parent_name,
+    })
+
+
+@mcp.tool()
+def previz_set_texture_tiling(
+    target: str,
+    scale_x: float,
+    scale_y: float,
+    rotation_degrees: float = 0.0,
+    mapping_mode: str = "POINT",
+    material_slot: int = 0,
+) -> dict:
+    """Adjust texture tiling scale and rotation non-destructively for Principled BSDF or mapping shader nodes."""
+    return _call("set_texture_tiling", {
+        "target": target,
+        "scale_x": scale_x,
+        "scale_y": scale_y,
+        "rotation_degrees": rotation_degrees,
+        "mapping_mode": mapping_mode,
+        "material_slot": material_slot,
+    })
+
+
+@mcp.tool()
+def previz_get_task_status(task_id: str) -> dict:
+    """Query execution and download status for asset imports and generation tasks."""
+    return _call("get_task_status", {"task_id": task_id})
+
+
+@mcp.tool()
 def previz_build_tracking_demo(output_path: str) -> dict:
     """Create and save a separate demo scene with a walking actor, moving car, follow cameras and three camera cuts."""
     return _call("build_tracking_demo", {"output_path": output_path})
@@ -226,4 +382,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

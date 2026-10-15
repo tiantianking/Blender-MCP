@@ -1,7 +1,7 @@
 bl_info = {
     "name": "AI Previz Director",
     "author": "OpenAI Codex",
-    "version": (0, 2, 0),
+    "version": (0, 4, 0),
     "blender": (5, 2, 0),
     "location": "View3D > Sidebar > AI Previz",
     "description": "Deterministic natural-language previz director companion",
@@ -13,9 +13,9 @@ import bpy
 from .dispatcher import poll as poll_dispatcher
 from .properties import AIPREVIZ_PG_Settings
 from .rpc_client import CLIENT
-from .ui import AIPREVIZ_OT_Send, AIPREVIZ_OT_Undo, AIPREVIZ_OT_Redo, AIPREVIZ_PT_Main, poll_ui_results
+from .ui import AIPREVIZ_OT_Send, AIPREVIZ_OT_Undo, AIPREVIZ_OT_Redo, AIPREVIZ_OT_RestoreCheckpoint, AIPREVIZ_PT_Main, poll_ui_results
 
-CLASSES = (AIPREVIZ_PG_Settings, AIPREVIZ_OT_Send, AIPREVIZ_OT_Undo, AIPREVIZ_OT_Redo, AIPREVIZ_PT_Main)
+CLASSES = (AIPREVIZ_PG_Settings, AIPREVIZ_OT_Send, AIPREVIZ_OT_Undo, AIPREVIZ_OT_Redo, AIPREVIZ_OT_RestoreCheckpoint, AIPREVIZ_PT_Main)
 
 
 def register():
@@ -39,4 +39,3 @@ def unregister():
         del bpy.types.Scene.ai_previz_settings
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)
-

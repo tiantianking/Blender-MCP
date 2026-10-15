@@ -17,12 +17,13 @@
           "type", "target", "subject", "shot", "lens_mm", "distance",
           "angle_degrees", "preserve_subject_framing", "speed_factor",
           "frame_start", "frame_end", "frame_delta", "time_scale",
-          "hold_frames", "shot_id", "shot_type", "padding", "offset_x", "offset_y", "offset_z"
+          "hold_frames", "shot_id", "shot_type", "padding", "offset_x", "offset_y", "offset_z",
+          "red", "green", "blue"
         ],
         "properties": {
           "type": {"type": "string", "enum": [
             "camera_set_lens", "camera_dolly", "camera_orbit",
-            "camera_look_at", "camera_frame_subject", "camera_follow", "actor_retime",
+            "camera_look_at", "camera_frame_subject", "camera_follow", "material_set_color", "actor_retime",
             "animation_shift", "animation_scale_time", "animation_insert_hold",
             "shot_create", "shot_set_range", "shot_set_camera",
             "shot_product_closeup", "shot_actor_closeup", "shot_hold",
@@ -47,6 +48,9 @@
           "offset_x": {"type": ["number", "null"]},
           "offset_y": {"type": ["number", "null"]},
           "offset_z": {"type": ["number", "null"]}
+          ,"red": {"type": ["number", "null"]}
+          ,"green": {"type": ["number", "null"]}
+          ,"blue": {"type": ["number", "null"]}
         }
       }
     }

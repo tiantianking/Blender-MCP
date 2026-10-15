@@ -45,6 +45,16 @@ def _camera_summary(obj: bpy.types.Object) -> dict:
 
 
 def _object_summary(obj: bpy.types.Object) -> dict:
+    materials = []
+    seen = set()
+    for candidate in (obj, *obj.children_recursive):
+        if candidate.type != "MESH":
+            continue
+        for slot in candidate.material_slots:
+            material = slot.material
+            if material and material.name not in seen:
+                seen.add(material.name)
+                materials.append({"name": material.name, "diffuse_color": _vec(material.diffuse_color)})
     summary = {
         **entity_summary(obj),
         "location": _vec(obj.location),
@@ -52,6 +62,7 @@ def _object_summary(obj: bpy.types.Object) -> dict:
         "dimensions": _vec(obj.dimensions),
         "visible": obj.visible_get(),
         "action": _action_summary(obj),
+        "materials": materials,
     }
     if obj.type == "ARMATURE":
         summary["armature"] = obj.name
@@ -90,4 +101,3 @@ def get_previz_state(detail_ids: list[str] | None = None) -> dict:
         "entities": others,
         "counts": {"scene_objects": len(scene.objects), "semantic_objects": len(semantic)},
     }
-
