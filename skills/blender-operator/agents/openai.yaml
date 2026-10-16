@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blender Operator"
+  short_description: "Operate Blender through Blender MCP and AI Previz Director"
+  default_prompt: "Use Blender MCP to inspect, edit, verify, and safely recover Blender scenes."

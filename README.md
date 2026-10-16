@@ -95,3 +95,20 @@
    ```powershell
    & 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' --background --factory-startup --python tests/blender/test_mvp.py
    ```
+
+---
+
+## Agent Skill 安装与同步
+
+仓库内的 [`skills/blender-operator/SKILL.md`](skills/blender-operator/SKILL.md) 是 Codex、Gemini/Antigravity、WorkBuddy 与 Hermes 共用的单一母版。它融合通用 Blender MCP 与 AI Previz Director MCP，并明确事务、完整工程检查点、坐标/约束、层级包围盒和独立核验边界。
+
+将整个 `skills/blender-operator` 文件夹复制到对应 Skill 根目录：
+
+| 客户端 | Windows 默认目录 |
+|---|---|
+| Codex | `%USERPROFILE%\.codex\skills\blender-operator` |
+| Gemini / Antigravity | `%USERPROFILE%\.gemini\config\skills\blender-operator` |
+| WorkBuddy | `%USERPROFILE%\.workbuddy-ai\skills\blender-operator` |
+| Hermes | `%USERPROFILE%\.hermes\skills\blender-operator` |
+
+安装后重启或重新加载对应客户端，再做只读验收：确认 Skill 被运行时发现，调用通用 Blender MCP 状态与场景读取，获取一张视口图；Director 另行报告 Bridge、连接和鉴权状态。文件复制成功不等于运行时已经加载，也不等于 Director 鉴权成功。
