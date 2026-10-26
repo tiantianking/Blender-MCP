@@ -58,7 +58,12 @@ def compile_quick(prompt: str, context: dict) -> dict | None:
     if speed and ("慢" in text or "快" in text):
         actor = _current_actor(context)
         if actor:
-            operations.append({"type": "actor_retime", "target": actor, "speed_factor": float(speed.group(1))})
+            factor = float(speed.group(1))
+            # In Chinese "慢 2 倍" means play at HALF speed (slow down BY 2x),
+            # so invert factors > 1 when slowing; "快 2 倍" keeps the value.
+            if "慢" in text and factor > 1:
+                factor = 1.0 / factor
+            operations.append({"type": "actor_retime", "target": actor, "speed_factor": factor})
     color = next((rgb for name, rgb in COLORS.items() if name in text), None)
     if color and any(word in text for word in ("改成", "变成", "颜色", "设为")):
         target = _entity_in_text(text, context)

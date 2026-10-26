@@ -9,6 +9,14 @@ from pathlib import Path
 from .task_context import build_task_request
 
 
+def _toml_string(value: str) -> str:
+    """Quote a value as a TOML basic string, escaping backslashes and quotes
+    so Windows paths (or user names containing quotes) cannot break the
+    inline `codex -c` configuration."""
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f"'{escaped}'"
+
+
 class BlenderAgentAdapter:
     """Run a real Codex tool loop against the configured Blender MCP."""
 
@@ -41,10 +49,10 @@ class BlenderAgentAdapter:
             command = [
                 "codex", "exec", "--ignore-user-config", "--approve-for-me", "--ephemeral",
                 "--skip-git-repo-check", "--color", "never", "-C", str(self.project_root),
-                "-c", f"mcp_servers.blender.command='{self.uvx}'",
+                "-c", f"mcp_servers.blender.command={_toml_string(self.uvx)}",
                 "-c", "mcp_servers.blender.args=['mcp-for-blender']",
-                "-c", f"mcp_servers.ai_previz.command='{python_exe}'",
-                "-c", f"mcp_servers.ai_previz.args=['{companion_server}']",
+                "-c", f"mcp_servers.ai_previz.command={_toml_string(python_exe)}",
+                "-c", f"mcp_servers.ai_previz.args=[{_toml_string(companion_server)}]",
                 "--output-last-message", str(output_file), instruction,
             ]
             if reference_image:

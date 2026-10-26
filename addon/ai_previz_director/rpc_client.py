@@ -61,13 +61,21 @@ class BridgeClient:
 
     def start(self):
         if self.thread and self.thread.is_alive():
-            return
+            # A previous stop() may still be draining inside a pending poll
+            # request (up to the 3s timeout).  Wait for it to exit before
+            # spawning a replacement, otherwise the add-on can end up with no
+            # polling thread at all once the old one finishes exiting.
+            self.thread.join(timeout=3.5)
+            if self.thread.is_alive():
+                return
         self.stop_event.clear()
         self.thread = threading.Thread(target=self._run, name="AI-Previz-Bridge-Poll", daemon=True)
         self.thread.start()
 
     def stop(self):
         self.stop_event.set()
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=3.5)
         self.connected = False
 
     def _post_result(self, request_id: str, result: dict):
@@ -116,7 +124,7 @@ def send_prompt_async(
                     "reference_image": reference_image,
                     "workflow_stage": workflow_stage,
                 },
-                timeout=1200,
+                timeout=1500,  # bridge worst case: ensure(30) + checkpoint(300) + agent(900) + compile
             )
             UI_RESULTS.put(result or {"ok": False, "error": "Empty bridge response"})
         except Exception as exc:

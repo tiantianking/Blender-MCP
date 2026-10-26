@@ -31,8 +31,11 @@ class GeminiBlenderAgentAdapter:
 
     @staticmethod
     def _powershell_json(script: str) -> dict:
+        # Force UTF-8 on the pipeline: on Chinese Windows the console default
+        # (GBK/GB18030) would corrupt non-ASCII values (e.g. user paths) when
+        # the subprocess side decodes with encoding="utf-8".
         completed = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", script],
+            ["powershell", "-NoProfile", "-Command", "[Console]::OutputEncoding=[Text.Encoding]::UTF8; " + script],
             capture_output=True,
             text=True,
             encoding="utf-8",

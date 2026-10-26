@@ -10,6 +10,8 @@ import bpy
 from .errors import ValidationError
 from .fcurves import action_fcurves
 
+UNDO_STACK_LIMIT = 50
+
 
 def _vec(value):
     return [float(v) for v in value]
@@ -49,6 +51,23 @@ def _constraint_snapshot(obj: bpy.types.Object) -> list[dict]:
                 item[attribute] = getattr(constraint, attribute)
         result.append(item)
     return result
+
+
+def _remove_fcurve(action, fc) -> None:
+    """Remove an FCurve from a legacy or layered Action."""
+    legacy = getattr(action, "fcurves", None)
+    if legacy is not None:
+        try:
+            legacy.remove(fc)
+            return
+        except (RuntimeError, ReferenceError):
+            pass
+    for layer in getattr(action, "layers", []):
+        for strip in getattr(layer, "strips", []):
+            for bag in getattr(strip, "channelbags", []):
+                if fc in list(bag.fcurves):
+                    bag.fcurves.remove(fc)
+                    return
 
 
 def capture_state() -> dict:
@@ -113,10 +132,21 @@ def restore_state(state: dict) -> None:
             "结构化事务不支持重建任意已删除对象，需使用完整工程恢复点（.blend检查点）进行恢复。"
         )
 
-    # Remove objects created after snapshot
-    for obj in list(bpy.data.objects):
+    # Remove objects created after snapshot.  The snapshot only covers the
+    # CURRENT scene, so restrict removal to the current scene as well;
+    # iterating bpy.data.objects here would unlink-or-delete objects that
+    # belong to other scenes in multi-scene .blend files.
+    current_scene = bpy.context.scene
+    for obj in list(current_scene.objects):
         if obj.name not in state["objects"]:
-            bpy.data.objects.remove(obj, do_unlink=True)
+            other_scenes = [
+                scene for scene in bpy.data.scenes
+                if scene != current_scene and obj.name in scene.objects
+            ]
+            if other_scenes:
+                current_scene.objects.unlink(obj)
+            else:
+                bpy.data.objects.remove(obj, do_unlink=True)
 
     for name, item in state["objects"].items():
         obj = bpy.data.objects.get(name)
@@ -149,6 +179,11 @@ def restore_state(state: dict) -> None:
         action = bpy.data.actions.get(action_name)
         if not action:
             continue
+        # Drop curves added after the snapshot so the rollback is complete.
+        snapshot_keys = {(c["data_path"], c["array_index"]) for c in action_state["curves"]}
+        for fc in list(action_fcurves(action)):
+            if (fc.data_path, fc.array_index) not in snapshot_keys:
+                _remove_fcurve(action, fc)
         curve_map = {(fc.data_path, fc.array_index): fc for fc in action_fcurves(action)}
         for curve_state in action_state["curves"]:
             fc = curve_map.get((curve_state["data_path"], curve_state["array_index"]))
@@ -173,6 +208,12 @@ def restore_state(state: dict) -> None:
             principled = next((node for node in material.node_tree.nodes if node.type == "BSDF_PRINCIPLED"), None)
             if principled and "Base Color" in principled.inputs:
                 principled.inputs["Base Color"].default_value = material_state["base_color"]
+    # Purge materials created after the snapshot that are now unreferenced,
+    # mirroring how post-snapshot objects are removed above.
+    snapshot_materials = set(state.get("materials", {}))
+    for material in list(bpy.data.materials):
+        if material.name not in snapshot_materials and material.users == 0:
+            bpy.data.materials.remove(material)
     from .shot import load_shots, save_shots
     save_shots(load_shots())
     bpy.context.view_layer.update()
@@ -227,6 +268,10 @@ class TransactionManager:
         tx.status = "COMMITTED"
         self.undo_stack.append(tx)
         self.redo_stack.clear()
+        # Bound the undo stack: each entry holds two full scene snapshots,
+        # which can be very large; drop the oldest beyond the cap.
+        while len(self.undo_stack) > UNDO_STACK_LIMIT:
+            self.undo_stack.pop(0)
         return tx
 
     def rollback(self, tx: Transaction, reason: str) -> None:

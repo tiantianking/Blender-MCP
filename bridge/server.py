@@ -79,19 +79,23 @@ class Broker:
         self.pending.put(req)
         if not req.event.wait(timeout):
             req.cancelled = True
+            with self.lock:
+                self.requests.pop(req.request_id, None)
             raise TimeoutError(f"Blender request timed out: {method}")
         if req.result is None:
+            with self.lock:
+                self.requests.pop(req.request_id, None)
             raise RuntimeError("Blender returned no result")
         return req.result
 
     def complete(self, request_id: str, result: dict):
-        req = self.requests.get(request_id)
+        req = self.requests.pop(request_id, None)
         if req:
             req.result = result
             req.event.set()
 
     def cancel(self, request_id: str) -> bool:
-        req = self.requests.get(request_id)
+        req = self.requests.pop(request_id, None)
         if not req or req.event.is_set():
             return False
         req.cancelled = True
@@ -158,16 +162,28 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _read(self) -> dict:
-        length = int(self.headers.get("Content-Length", "0"))
-        if length > 2_000_000:
+        # Enforce JSON Content-Type so cross-origin "simple requests"
+        # (e.g. text/plain from a browser) cannot smuggle JSON bodies
+        # past CORS without a preflight.
+        ctype = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if ctype not in ("", "application/json"):
+            raise ValueError("Content-Type must be application/json")
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            raise ValueError("Invalid Content-Length") from None
+        if length < 0 or length > 2_000_000:
             raise ValueError("Request body too large")
         return json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
 
     def _authorized(self) -> bool:
         if self.path == "/health":
             return True
+        # Match the Origin hostname exactly; prefix checks would also accept
+        # attacker domains such as http://localhost.evil.com.
         origin = self.headers.get("Origin")
-        if origin and not (origin.startswith("http://127.0.0.1") or origin.startswith("http://localhost")):
+        origin_host = (urlparse(origin).hostname or "").lower() if origin else ""
+        if origin and origin_host not in {"127.0.0.1", "localhost", "::1"}:
             return False
         received = self.headers.get("X-AI-Previz-Token", "")
         authorized = secrets.compare_digest(received, RUNTIME["token"])
@@ -175,7 +191,10 @@ class Handler(BaseHTTPRequestHandler):
         # memory even after the installed add-on has been upgraded.  The bridge
         # only listens on loopback, so keep those already-running panels usable
         # until Blender is restarted.  A non-empty but incorrect token is still
-        # rejected.
+        # rejected.  Legacy access additionally requires the request to carry
+        # NO Origin header: native local clients (urllib) never send one, while
+        # any browser-initiated request always does, so a hostile web page can
+        # never reach the legacy path.
         legacy_loopback_path = self.path.startswith(
             (
                 "/blender/register",
@@ -189,7 +208,13 @@ class Handler(BaseHTTPRequestHandler):
                 "/logs",
             )
         )
-        if not authorized and not received and legacy_loopback_path and self.client_address[0] in {"127.0.0.1", "::1"}:
+        if (
+            not authorized
+            and not received
+            and not origin
+            and legacy_loopback_path
+            and self.client_address[0] in {"127.0.0.1", "::1"}
+        ):
             if not Handler.legacy_warning_emitted:
                 logging.warning("Accepted tokenless legacy panel client on loopback; restart Blender to restore token authentication")
                 Handler.legacy_warning_emitted = True
