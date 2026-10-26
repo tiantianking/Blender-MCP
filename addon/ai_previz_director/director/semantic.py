@@ -1,4 +1,5 @@
 import json
+import difflib
 import re
 from typing import Iterable
 
@@ -7,6 +8,12 @@ import bpy
 from .errors import AmbiguousEntity, EntityNotFound, ValidationError
 
 ROLES = {"ACTOR", "PRODUCT", "CAMERA", "PROP", "CROWD", "BACKGROUND", "LIGHT"}
+
+
+def _normalize_ref(value: str) -> str:
+    """Casefold and strip separators so 'hero car', 'hero_car' and 'HeroCar'
+    all resolve to the same key. Agents rarely repeat a reference exactly."""
+    return re.sub(r"[\s_\-·。]", "", value.casefold())
 
 
 def _aliases(obj: bpy.types.Object) -> list[str]:
@@ -67,6 +74,19 @@ def semantic_objects() -> list[bpy.types.Object]:
     return [obj for obj in bpy.context.scene.objects if auto_role(obj)]
 
 
+def _reference_candidates(ref: str, scene: bpy.types.Scene) -> list[str]:
+    """Closest existing references for a failed lookup, so the error message
+    itself tells the agent how to recover instead of forcing a full re-query."""
+    pool = []
+    for obj in scene.objects:
+        pool.append(obj.name)
+        role = auto_role(obj)
+        if role:
+            pool.append(entity_id(obj))
+            pool.extend(_aliases(obj))
+    return difflib.get_close_matches(ref, pool, n=5, cutoff=0.4)
+
+
 def find_entity(reference: str | None, roles: set[str] | None = None) -> bpy.types.Object:
     if not reference:
         raise EntityNotFound("No entity reference supplied")
@@ -81,15 +101,18 @@ def find_entity(reference: str | None, roles: set[str] | None = None) -> bpy.typ
         if not roles or auto_role(obj) in roles:
             return obj
     candidates = []
+    wanted = _normalize_ref(ref)
     for obj in scene.objects:
         role = auto_role(obj)
         if roles and role not in roles:
             continue
-        keys = {obj.name.casefold(), entity_id(obj).casefold(), *(a.casefold() for a in _aliases(obj))}
-        if ref in keys:
+        keys = {_normalize_ref(k) for k in (obj.name, entity_id(obj), *_aliases(obj)) if k}
+        if ref in keys or wanted in keys:
             candidates.append(obj)
     if not candidates:
-        raise EntityNotFound(f"Entity not found: {reference}")
+        hint = _reference_candidates(ref, scene)
+        suffix = f" Did you mean: {hint}?" if hint else " Call previz_get_state to list valid references."
+        raise EntityNotFound(f"Entity not found: {reference}.{suffix}")
     if len(candidates) > 1:
         raise AmbiguousEntity(f"Ambiguous entity '{reference}': {[o.name for o in candidates]}")
     return candidates[0]

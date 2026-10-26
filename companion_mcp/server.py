@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -10,6 +11,7 @@ import urllib.request
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.utilities.types import Image
 
 APP_DIR = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")) / "AI-Previz-Director"
 RUNTIME_PATH = APP_DIR / "runtime.json"
@@ -83,13 +85,22 @@ def _call(method: str, payload: dict) -> dict:
         raise RuntimeError(f"AI Previz Bridge call failed: {exc}") from exc
 
 
-def _intent(operation: dict, prompt: str = "MCP structured operation") -> dict:
+def _intent(operation: dict, task_label: str | None = None) -> dict:
+    """Build an execute_intent call. The recorded prompt identifies the
+    operation type (and optional task label) so undo history stays readable
+    instead of every entry reading 'MCP structured operation'."""
+    prompt = f"structured:{operation.get('type', 'operation')}"
+    if task_label:
+        prompt = f"{prompt} ({task_label})"
     return _call("execute_intent", {"intent": {"intent_version": 1, "operations": [operation]}, "prompt": prompt})
 
 
 @mcp.tool()
 def previz_get_state(detail_ids: list[str] | None = None) -> dict:
-    """Return compact semantic previz state, including all tagged actors, products, cameras and shots."""
+    """Return compact semantic previz state: tagged actors, products, cameras and shots
+    as light summaries (id/name/role/aliases). Pass detail_ids to expand specific
+    entities with full transforms, materials and animation info — keeping large
+    scenes cheap to read while still allowing deep inspection on demand."""
     return _call("get_state", {"detail_ids": detail_ids or []})
 
 
@@ -101,7 +112,11 @@ def previz_set_frame(frame: int) -> dict:
 
 @mcp.tool()
 def previz_find_entity(reference: str) -> dict:
-    """Resolve a semantic id, object name or alias without modifying Blender."""
+    """Resolve a semantic id, object name or alias to its stable reference without modifying Blender.
+
+    Accepted magic references: 'current_camera' (or 当前摄影机/当前相机) for the
+    active camera, 'active_object' (or 当前对象) for the active selection.
+    Regular names match object name, previz_id and aliases case-insensitively."""
     return _call("find_entity", {"reference": reference})
 
 
@@ -113,7 +128,8 @@ def previz_tag_entity(reference: str, role: str, entity_id: str, aliases: list[s
 
 @mcp.tool()
 def camera_set_lens(lens_mm: float, camera: str = "current_camera", subject: str | None = None, preserve_subject_framing: bool = False) -> dict:
-    """Set camera focal length; optionally preserve a subject's framing by adjusting distance."""
+    """Set camera focal length in millimeters (valid 8-600; e.g. 24 wide, 50 normal, 85 portrait).
+    Optionally preserve a subject's framing by adjusting camera distance."""
     op = {"type": "camera_set_lens", "target": camera, "lens_mm": lens_mm, "preserve_subject_framing": preserve_subject_framing}
     if subject:
         op["subject"] = subject
@@ -122,13 +138,19 @@ def camera_set_lens(lens_mm: float, camera: str = "current_camera", subject: str
 
 @mcp.tool()
 def camera_dolly(distance: float, camera: str = "current_camera") -> dict:
-    """Move a camera along its viewing direction. Positive values move toward the subject."""
+    """Move a camera along its viewing direction, in world units (meters).
+    POSITIVE values move TOWARD the subject, negative values pull back."""
     return _intent({"type": "camera_dolly", "target": camera, "distance": distance})
 
 
 @mcp.tool()
 def camera_orbit(subject: str, angle_degrees: float, camera: str = "current_camera") -> dict:
-    """Reposition a camera around a subject on world Z and keep looking at it."""
+    """Reposition a camera around a subject on world Z while keeping it aimed at the subject.
+
+    Direction convention: POSITIVE angle orbits counterclockwise (camera moves
+    to the LEFT of the subject); NEGATIVE angle orbits clockwise (to the RIGHT).
+    Example: orbit right by 30 degrees -> angle_degrees=-30.
+    """
     return _intent({"type": "camera_orbit", "target": camera, "subject": subject, "angle_degrees": angle_degrees})
 
 
@@ -203,9 +225,19 @@ def previz_redo() -> dict:
 
 
 @mcp.tool()
-def previz_capture_view(output_path: str) -> dict:
-    """Render a clean camera still without Blender UI overlays."""
-    return _call("capture_view", {"output_path": output_path})
+def previz_capture_view(output_path: str, return_image: bool = True):
+    """Render a clean camera still without Blender UI overlays.
+
+    Returns the result dict PLUS the rendered PNG as an image content block
+    (when return_image is true), so the calling agent can visually verify the
+    scene directly without a separate file-reading step."""
+    result = _call("capture_view", {"output_path": output_path})
+    if return_image and result.get("ok") and result.get("result", {}).get("path"):
+        path = result["result"]["path"]
+        if os.path.isfile(path):
+            with open(path, "rb") as handle:
+                return [result, Image(data=handle.read(), format="png")]
+    return result
 
 
 @mcp.tool()
@@ -226,14 +258,21 @@ def previz_get_scene_graph(
     collection: str | None = None,
     include_hidden: bool = True,
     include_materials: bool = False,
+    include_matrix: bool = False,
 ) -> dict:
-    """Query complete scene tree with pagination, hierarchy (parent/children), collections, world transform, AABB bounds and semantic tags."""
+    """Query the scene tree with pagination, hierarchy, world AABB bounds and semantic tags.
+
+    Returns name/type/parent/children/transform/aabb per object. The 4x4
+    world_matrix is omitted by default to keep responses compact (aabb already
+    encodes world-space extents); set include_matrix=true when the full matrix
+    is required."""
     return _call("get_scene_graph", {
         "cursor": cursor,
         "limit": limit,
         "collection": collection,
         "include_hidden": include_hidden,
         "include_materials": include_materials,
+        "include_matrix": include_matrix,
     })
 
 
@@ -247,8 +286,19 @@ def previz_set_object_transform(
     space: str = "world",
     keyframe: bool = False,
     frame: int | None = None,
+    rotation_degrees: list[float] | None = None,
 ) -> dict:
-    """Safely transform an object in world or local space. Correctly calculates parented object coordinates and supports transactional rollback."""
+    """Safely transform an object in world or local space with transactional rollback.
+
+    UNITS: location is in world units (meters); scale is a multiplier (1.0 = unchanged).
+    ROTATION IS IN RADIANS (Blender convention: 90 degrees = 1.5708, 180 = 3.1416).
+    Prefer the rotation_degrees parameter (Euler XYZ, degrees) for human-style angles.
+    mode: 'absolute' sets values, 'relative' adds to current. space: 'world' or 'local'.
+    """
+    if rotation is not None and rotation_degrees is not None:
+        raise ValueError("Pass either rotation (radians) or rotation_degrees, not both")
+    if rotation_degrees is not None:
+        rotation = [math.radians(float(v)) for v in rotation_degrees]
     return _call("set_object_transform", {
         "reference": reference,
         "location": location,
@@ -272,13 +322,29 @@ def previz_capture_views(
     views: list[str] | None = None,
     camera: str | None = None,
     output_dir: str | None = None,
-) -> dict:
-    """Render multi-angle clean viewport screenshots (top, front, right, perspective, camera) without disrupting user UI."""
-    return _call("capture_views", {
+    return_images: bool = False,
+    max_images: int = 2,
+):
+    """Render multi-angle clean viewport screenshots (top, front, right, perspective, camera) without disrupting user UI.
+
+    With return_images=true the rendered PNGs are ALSO returned as image
+    content blocks (up to max_images, camera view first) so the agent can
+    visually inspect the scene. Keep max_images small to control token cost."""
+    result = _call("capture_views", {
         "views": views or ["top", "front", "right", "perspective", "camera"],
         "camera": camera,
         "output_dir": output_dir,
     })
+    if return_images and result.get("ok"):
+        blocks = [result]
+        rendered = [v for v in result.get("views", []) if v.get("success") and v.get("path") and os.path.isfile(v["path"])]
+        # Camera view first for verification value, then the rest
+        rendered.sort(key=lambda v: 0 if v.get("view") == "camera" else 1)
+        for view in rendered[: max(1, int(max_images))]:
+            with open(view["path"], "rb") as handle:
+                blocks.append(Image(data=handle.read(), format="png"))
+        return blocks
+    return result
 
 
 @mcp.tool()
@@ -361,12 +427,6 @@ def previz_set_texture_tiling(
         "mapping_mode": mapping_mode,
         "material_slot": material_slot,
     })
-
-
-@mcp.tool()
-def previz_get_task_status(task_id: str) -> dict:
-    """Query execution and download status for asset imports and generation tasks."""
-    return _call("get_task_status", {"task_id": task_id})
 
 
 @mcp.tool()

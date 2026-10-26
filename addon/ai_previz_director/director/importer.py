@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import bpy
+import mathutils
 
 from .errors import ValidationError
 
@@ -101,6 +102,21 @@ def import_file(
             if slot.material:
                 all_materials.add(slot.material.name)
 
+    # Combined world-space bounds of everything just imported, so the agent
+    # can immediately judge scale/placement without another scene_graph round trip.
+    world_bounds = None
+    corners = []
+    for obj in new_objects:
+        if obj.type == "MESH" and obj.bound_box:
+            corners.extend(obj.matrix_world @ mathutils.Vector(c) for c in obj.bound_box)
+    if corners:
+        world_bounds = {
+            "min": [round(min(c.x for c in corners), 4), round(min(c.y for c in corners), 4), round(min(c.z for c in corners), 4)],
+            "max": [round(max(c.x for c in corners), 4), round(max(c.y for c in corners), 4), round(max(c.z for c in corners), 4)],
+        }
+        size = [round(world_bounds["max"][i] - world_bounds["min"][i], 4) for i in range(3)]
+        world_bounds["size"] = size
+
     return {
         "ok": True,
         "source_file": str(path),
@@ -109,5 +125,6 @@ def import_file(
         "parent": parent_obj.name if parent_obj else None,
         "collection": target_coll.name if target_coll else None,
         "materials": sorted(all_materials),
+        "world_bounds": world_bounds,
         "format": ext.lstrip("."),
     }

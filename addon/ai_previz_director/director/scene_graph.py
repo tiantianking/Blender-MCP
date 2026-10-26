@@ -51,13 +51,17 @@ def get_scene_graph(
     collection: str | None = None,
     include_hidden: bool = True,
     include_materials: bool = False,
+    include_matrix: bool = False,
 ) -> dict:
     scene = bpy.context.scene
 
     if collection:
         target_coll = bpy.data.collections.get(collection)
         if not target_coll:
-            raise ValidationError(f"Collection '{collection}' not found")
+            existing = sorted(c.name for c in bpy.data.collections)
+            raise ValidationError(
+                f"Collection '{collection}' not found. Available collections: {existing}"
+            )
         candidates = list(_get_collection_objects(target_coll))
     else:
         candidates = list(scene.objects)
@@ -105,7 +109,6 @@ def get_scene_graph(
             "rotation": _vec(obj.rotation_euler),
             "rotation_mode": obj.rotation_mode,
             "scale": _vec(obj.scale),
-            "world_matrix": _mat4(obj.matrix_world),
             "dimensions": _vec(obj.dimensions),
             "aabb": _get_aabb(obj),
             "visibility": {
@@ -118,6 +121,10 @@ def get_scene_graph(
             "face_count": face_count,
             "semantic": {"role": role, "id": sem_id, "aliases": aliases} if role else None,
         }
+        if include_matrix:
+            # Omitted by default: 16 floats per object bloat responses while
+            # aabb already carries the world-space extent agents need.
+            item["world_matrix"] = _mat4(obj.matrix_world)
         objects_data.append(item)
 
     return {

@@ -42,7 +42,7 @@ def compile_quick(prompt: str, context: dict) -> dict | None:
     if any(word in text for word in ("重做", "redo")):
         return {"intent_version": 1, "operations": [{"type": "previz_redo"}]}
     operations = []
-    lens = re.search(r"(?<!\d)(\d{2,3}(?:\.\d+)?)\s*mm\b", text)
+    lens = re.search(r"(?<![\d\-])(\d{2,3}(?:\.\d+)?)\s*mm\b", text)
     if lens:
         operations.append({"type": "camera_set_lens", "target": "current_camera", "lens_mm": float(lens.group(1)), "preserve_subject_framing": False})
     orbit = re.search(r"(?:向)?(左|右).*?绕.*?(-?\d+(?:\.\d+)?)\s*度", text)

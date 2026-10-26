@@ -30,7 +30,6 @@ def test_companion_mcp_tool_registration():
         "previz_duplicate_object",
         "previz_import_file",
         "previz_set_texture_tiling",
-        "previz_get_task_status",
         "previz_undo",
         "previz_redo",
         "camera_set_lens",
@@ -73,3 +72,16 @@ def test_companion_mcp_tool_registration():
     assert "views" in vsig.parameters
     assert "camera" in vsig.parameters
     assert "output_dir" in vsig.parameters
+    assert "return_images" in vsig.parameters
+
+    # Agent-experience contracts: unit semantics must be discoverable from signatures
+    transform_fn = registered_tools["previz_set_object_transform"].fn
+    tsig2 = inspect.signature(transform_fn)
+    assert "rotation_degrees" in tsig2.parameters, "agents need a degrees entry point"
+
+    graph_fn = registered_tools["previz_get_scene_graph"].fn
+    gsig = inspect.signature(graph_fn)
+    assert "include_matrix" in gsig.parameters
+
+    # The task-status tool was removed: no production code ever registered tasks
+    assert "previz_get_task_status" not in registered_tools

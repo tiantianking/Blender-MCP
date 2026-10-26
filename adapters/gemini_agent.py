@@ -168,14 +168,42 @@ class GeminiBlenderAgentAdapter:
         conversation_id = data.get("conversation_id")
         return conversation_id if isinstance(conversation_id, str) and conversation_id else None
 
-    def _save_conversation_id(self, project_id: str, conversation_id: str) -> None:
+    def _load_session_stage(self, project_id: str) -> str | None:
+        try:
+            data = json.loads(self.session_path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            return None
+        if data.get("project_id") != project_id:
+            return None
+        stage = data.get("stage")
+        return stage if isinstance(stage, str) and stage else None
+
+    def _save_session_stage(self, project_id: str, stage: str) -> None:
+        data = {}
+        try:
+            data = json.loads(self.session_path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            data = {}
+        if data.get("project_id") != project_id:
+            data = {"project_id": project_id}
+        data["stage"] = stage
         self.session_path.parent.mkdir(parents=True, exist_ok=True)
         self.session_path.write_text(
-            json.dumps(
-                {"project_id": project_id, "conversation_id": conversation_id},
-                ensure_ascii=False,
-                indent=2,
-            ),
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    def _save_conversation_id(self, project_id: str, conversation_id: str) -> None:
+        data = {}
+        try:
+            data = json.loads(self.session_path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            data = {}
+        if data.get("project_id") != project_id:
+            data = {"project_id": project_id}
+        data["conversation_id"] = conversation_id
+        self.session_path.parent.mkdir(parents=True, exist_ok=True)
+        self.session_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
@@ -188,9 +216,11 @@ class GeminiBlenderAgentAdapter:
         return conversation_id, 0
 
     def _send_to_persistent_conversation(
-        self, bootstrap_instruction: str, user_instruction: str, project_id: str, env: dict[str, str]
+        self, bootstrap_instruction: str, user_instruction: str, project_id: str, env: dict[str, str],
+        conversation_id: str | None = None,
     ) -> tuple[str, int, bool]:
-        conversation_id = self._load_conversation_id(project_id)
+        if not conversation_id:
+            conversation_id = self._load_conversation_id(project_id)
         if not conversation_id:
             conversation_id, after_row = self._new_conversation(bootstrap_instruction, project_id, env)
             return conversation_id, after_row, False
@@ -246,9 +276,18 @@ class GeminiBlenderAgentAdapter:
         instruction = self._build_instruction(task_request)
         natural_instruction = task_request
         with self._session_lock:
+            # Start a fresh conversation whenever the workflow stage changes:
+            # long-lived sessions accumulate stale task context that dilutes
+            # instruction adherence (agents start touching unrelated objects).
+            session_stage = self._load_session_stage(project_id)
+            if session_stage is not None and session_stage != stage:
+                conversation_id = None
+            else:
+                conversation_id = self._load_conversation_id(project_id)
             conversation_id, after_row, reused = self._send_to_persistent_conversation(
-                instruction, natural_instruction, project_id, env
+                instruction, natural_instruction, project_id, env, conversation_id
             )
+            self._save_session_stage(project_id, stage)
             message = self._wait_for_result(conversation_id, after_row)
         return {
             "ok": True,

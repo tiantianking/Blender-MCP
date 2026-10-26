@@ -70,15 +70,21 @@ def _object_summary(obj: bpy.types.Object) -> dict:
 
 
 def get_previz_state(detail_ids: list[str] | None = None) -> dict:
+    """Semantic previz state. Compact by default: entities are summarized with
+    id/name/role/aliases only; pass detail_ids to expand specific entities
+    (full transforms, materials and animation summary) for actors, products
+    and other roles alike. This keeps large scenes cheap to read."""
     scene = bpy.context.scene
     semantic = [obj for obj in scene.objects if auto_role(obj)]
     details = set(detail_ids or [])
-    actors = [_object_summary(o) for o in semantic if auto_role(o) == "ACTOR"]
-    products = [_object_summary(o) for o in semantic if auto_role(o) == "PRODUCT"]
+
+    def summary_for(obj: bpy.types.Object) -> dict:
+        return _object_summary(obj) if entity_id(obj) in details else entity_summary(obj)
+
+    actors = [summary_for(o) for o in semantic if auto_role(o) == "ACTOR"]
+    products = [summary_for(o) for o in semantic if auto_role(o) == "PRODUCT"]
     cameras = [_camera_summary(o) for o in scene.objects if o.type == "CAMERA"]
-    others = [entity_summary(o) for o in semantic if auto_role(o) not in {"ACTOR", "PRODUCT", "CAMERA"}]
-    if details:
-        others = [_object_summary(o) if entity_id(o) in details else entity_summary(o) for o in semantic if auto_role(o) not in {"ACTOR", "PRODUCT", "CAMERA"}]
+    others = [summary_for(o) for o in semantic if auto_role(o) not in {"ACTOR", "PRODUCT", "CAMERA"}]
     active = bpy.context.view_layer.objects.active
     shot = current_shot(scene.frame_current)
     return {

@@ -47,7 +47,8 @@ def _shot_ref(reference: str | None) -> dict:
     for shot in shots:
         if str(shot.get("shot_id", "")).casefold() == ref:
             return shot
-    raise EntityNotFound(f"Shot not found: {reference}")
+    available = [str(s.get("shot_id")) for s in shots]
+    raise EntityNotFound(f"Shot not found: {reference}. Available shot_ids: {available}")
 
 
 def current_shot(frame: int) -> dict | None:

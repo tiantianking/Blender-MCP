@@ -4,7 +4,7 @@ import math
 import mathutils
 import bpy
 
-from .errors import ValidationError
+from .errors import AmbiguousEntity, EntityNotFound, ValidationError
 from .semantic import find_entity
 
 
@@ -16,11 +16,11 @@ def _resolve_object(reference: str) -> bpy.types.Object:
     if not reference or not isinstance(reference, str):
         raise ValidationError(f"Invalid object reference: {reference}")
     try:
-        obj = find_entity(reference)
-        if obj:
-            return obj
-    except Exception:
-        pass
+        return find_entity(reference)
+    except EntityNotFound:
+        pass  # fall through to the raw bpy.data lookup below
+    # AmbiguousEntity must propagate: its candidate list is exactly what the
+    # calling agent needs to disambiguate the reference on the next try.
     obj = bpy.data.objects.get(reference)
     if obj:
         return obj

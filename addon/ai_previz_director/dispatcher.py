@@ -53,6 +53,7 @@ def _execute(request: DispatchRequest) -> dict:
             collection=p.get("collection"),
             include_hidden=p.get("include_hidden", True),
             include_materials=p.get("include_materials", False),
+            include_matrix=p.get("include_matrix", False),
         )
     if request.method == "set_object_transform":
         return set_object_transform(

@@ -75,7 +75,16 @@ def frame_subject(reference: str | None, subject_ref: str, padding: float = 0.15
     pts = _world_bounds(subject)
     center = sum(pts, Vector()) / len(pts)
     radius = max((p - center).length for p in pts) or 0.5
-    fov = camera.data.angle_y if camera.data.angle_y > 1e-6 else math.radians(35)
+    # Use the narrower of horizontal/vertical FOV so wide subjects still fit
+    # when the render aspect is portrait or the sensor is vertical.
+    fov_y = camera.data.angle_y
+    fov_x = camera.data.angle_x
+    if fov_y > 1e-6 and fov_x > 1e-6:
+        fov = min(fov_x, fov_y)
+    elif fov_y > 1e-6:
+        fov = fov_y
+    else:
+        fov = math.radians(35)
     distance = radius * (1.0 + float(padding)) / math.tan(fov / 2.0)
     backward = camera.matrix_world.to_quaternion() @ Vector((0.0, 0.0, 1.0))
     camera.location = center + backward.normalized() * distance
