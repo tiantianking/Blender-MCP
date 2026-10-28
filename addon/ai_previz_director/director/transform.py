@@ -13,18 +13,7 @@ def _vec(val, precision: int = 6) -> list[float]:
 
 
 def _resolve_object(reference: str) -> bpy.types.Object:
-    if not reference or not isinstance(reference, str):
-        raise ValidationError(f"Invalid object reference: {reference}")
-    try:
-        return find_entity(reference)
-    except EntityNotFound:
-        pass  # fall through to the raw bpy.data lookup below
-    # AmbiguousEntity must propagate: its candidate list is exactly what the
-    # calling agent needs to disambiguate the reference on the next try.
-    obj = bpy.data.objects.get(reference)
-    if obj:
-        return obj
-    raise ValidationError(f"Object not found: '{reference}'")
+    return resolve_object(reference)
 
 
 def _validate_change(change: dict, index: int | None = None) -> bpy.types.Object:

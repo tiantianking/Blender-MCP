@@ -12,6 +12,7 @@ from .director.semantic import entity_summary, find_entity, tag_entity
 from .director.demo import build_tracking_demo
 from .director.scene_graph import get_scene_graph
 from .director.transform import set_object_transform, batch_transform
+from .director.primitives import rename_object, VALID_PRIMITIVES
 from .director.view_capture import capture_views, set_viewport_view
 from .director.collection import create_collection, move_objects, set_visibility
 from .director.duplicate import duplicate_object
@@ -68,6 +69,10 @@ def _execute(request: DispatchRequest) -> dict:
         )
     if request.method == "batch_transform":
         return batch_transform(p.get("changes", []))
+    if request.method == "rename_entity":
+        return rename_object(reference=p["reference"], new_name=p["new_name"])
+    if request.method == "list_primitives":
+        return {"ok": True, "primitives": sorted(VALID_PRIMITIVES)}
     if request.method == "capture_views":
         return capture_views(
             views=p.get("views"),

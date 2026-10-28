@@ -3,9 +3,15 @@
   "title": "AI Previz Director Intent",
   "type": "object",
   "additionalProperties": false,
-  "required": ["intent_version", "operations"],
+  "required": [
+    "intent_version",
+    "operations"
+  ],
   "properties": {
-    "intent_version": {"type": "integer", "const": 1},
+    "intent_version": {
+      "type": "integer",
+      "const": 1
+    },
     "operations": {
       "type": "array",
       "minItems": 1,
@@ -14,43 +20,226 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "type", "target", "subject", "shot", "lens_mm", "distance",
-          "angle_degrees", "preserve_subject_framing", "speed_factor",
-          "frame_start", "frame_end", "frame_delta", "time_scale",
-          "hold_frames", "shot_id", "shot_type", "padding", "offset_x", "offset_y", "offset_z",
-          "red", "green", "blue"
+          "type",
+          "target",
+          "subject",
+          "shot",
+          "lens_mm",
+          "distance",
+          "angle_degrees",
+          "preserve_subject_framing",
+          "speed_factor",
+          "frame_start",
+          "frame_end",
+          "frame_delta",
+          "time_scale",
+          "hold_frames",
+          "shot_id",
+          "shot_type",
+          "padding",
+          "offset_x",
+          "offset_y",
+          "offset_z",
+          "red",
+          "green",
+          "blue",
+          "primitive"
         ],
         "properties": {
-          "type": {"type": "string", "enum": [
-            "camera_set_lens", "camera_dolly", "camera_orbit",
-            "camera_look_at", "camera_frame_subject", "camera_follow", "material_set_color", "actor_retime",
-            "animation_shift", "animation_scale_time", "animation_insert_hold",
-            "shot_create", "shot_set_range", "shot_set_camera",
-            "shot_product_closeup", "shot_actor_closeup", "shot_hold",
-            "previz_undo", "previz_redo"
-          ]},
-          "target": {"type": ["string", "null"]},
-          "subject": {"type": ["string", "null"]},
-          "shot": {"type": ["string", "null"]},
-          "lens_mm": {"type": ["number", "null"]},
-          "distance": {"type": ["number", "null"]},
-          "angle_degrees": {"type": ["number", "null"]},
-          "preserve_subject_framing": {"type": ["boolean", "null"]},
-          "speed_factor": {"type": ["number", "null"]},
-          "frame_start": {"type": ["integer", "null"]},
-          "frame_end": {"type": ["integer", "null"]},
-          "frame_delta": {"type": ["number", "null"]},
-          "time_scale": {"type": ["number", "null"]},
-          "hold_frames": {"type": ["integer", "null"]},
-          "shot_id": {"type": ["string", "null"]},
-          "shot_type": {"type": ["string", "null"]},
-          "padding": {"type": ["number", "null"]},
-          "offset_x": {"type": ["number", "null"]},
-          "offset_y": {"type": ["number", "null"]},
-          "offset_z": {"type": ["number", "null"]}
-          ,"red": {"type": ["number", "null"]}
-          ,"green": {"type": ["number", "null"]}
-          ,"blue": {"type": ["number", "null"]}
+          "type": {
+            "type": "string",
+            "enum": [
+              "camera_set_lens",
+              "camera_dolly",
+              "camera_orbit",
+              "camera_look_at",
+              "camera_frame_subject",
+              "camera_follow",
+              "material_set_color",
+              "actor_retime",
+              "animation_shift",
+              "animation_scale_time",
+              "animation_insert_hold",
+              "shot_create",
+              "shot_set_range",
+              "shot_set_camera",
+              "shot_product_closeup",
+              "shot_actor_closeup",
+              "shot_hold",
+              "previz_undo",
+              "previz_redo",
+              "object_create",
+              "object_delete"
+            ]
+          },
+          "target": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shot": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lens_mm": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "distance": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "angle_degrees": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "preserve_subject_framing": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "speed_factor": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "frame_start": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "frame_end": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "frame_delta": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "time_scale": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "hold_frames": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "shot_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shot_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "padding": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "offset_x": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "offset_y": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "offset_z": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "red": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "green": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "blue": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "primitive": {
+            "type": "string",
+            "enum": [
+              "CUBE",
+              "SPHERE",
+              "CYLINDER",
+              "CONE",
+              "PLANE",
+              "TORUS",
+              "MONKEY",
+              "EMPTY"
+            ],
+            "description": "Primitive kind to create (object_create only)"
+          },
+          "size": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 1000,
+            "description": "Overall bounding extent (diameter) in world units (object_create only)"
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "Also delete child hierarchy (object_delete only)"
+          },
+          "location_x": {
+            "type": "number",
+            "description": "World-space x coordinate in meters (object_create only)"
+          },
+          "location_y": {
+            "type": "number",
+            "description": "World-space y coordinate in meters (object_create only)"
+          },
+          "location_z": {
+            "type": "number",
+            "description": "World-space z coordinate in meters (object_create only)"
+          }
         }
       }
     }

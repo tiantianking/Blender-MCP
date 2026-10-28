@@ -1,9 +1,23 @@
 from __future__ import annotations
 
+import difflib
+
 import bpy
 
 from .errors import ValidationError
-from .semantic import find_entity
+from .semantic import find_entity, resolve_object
+
+
+def _collection_candidates(name: str) -> str:
+    """Closest existing collection names so a failed lookup tells the agent
+    how to recover instead of forcing a scene_graph re-query."""
+    pool = [coll.name for coll in bpy.data.collections]
+    matches = difflib.get_close_matches(name, pool, n=5, cutoff=0.4)
+    if matches:
+        return f" Did you mean: {matches}?"
+    if pool:
+        return f" Available collections: {sorted(pool)[:20]}"
+    return " The scene has no collections yet (create one first)."
 
 
 def create_collection(name: str, parent_collection: str | None = None) -> dict:
@@ -21,7 +35,7 @@ def create_collection(name: str, parent_collection: str | None = None) -> dict:
     if parent_collection:
         parent = bpy.data.collections.get(parent_collection)
         if not parent:
-            raise ValidationError(f"Parent collection '{parent_collection}' not found")
+            raise ValidationError(f"Parent collection '{parent_collection}' not found.{_collection_candidates(parent_collection)}")
         if coll.name not in parent.children:
             parent.children.link(coll)
     else:
@@ -45,16 +59,17 @@ def move_objects(objects: list[str], target_collection: str) -> dict:
 
     target = bpy.data.collections.get(target_collection)
     if not target:
-        raise ValidationError(f"Target collection '{target_collection}' not found")
+        raise ValidationError(f"Target collection '{target_collection}' not found.{_collection_candidates(target_collection)}")
 
     resolved_objs = []
     for ref in objects:
         try:
             obj = find_entity(ref)
-        except Exception:
+        except Exception as exc:
+            # fall back to raw bpy.data lookup; ambiguity/no-match re-raises below
             obj = bpy.data.objects.get(ref)
         if not obj:
-            raise ValidationError(f"Object not found: '{ref}'")
+            raise ValidationError(f"Object not found: '{ref}' ({exc})")
         resolved_objs.append(obj)
 
     moved = []
@@ -82,7 +97,7 @@ def set_visibility(
 ) -> dict:
     coll = bpy.data.collections.get(collection)
     if not coll:
-        raise ValidationError(f"Collection '{collection}' not found")
+        raise ValidationError(f"Collection '{collection}' not found.{_collection_candidates(collection)}")
 
     if hide_viewport is not None:
         coll.hide_viewport = bool(hide_viewport)

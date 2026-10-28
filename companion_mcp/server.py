@@ -127,6 +127,49 @@ def previz_tag_entity(reference: str, role: str, entity_id: str, aliases: list[s
 
 
 @mcp.tool()
+def previz_create_object(
+    name: str | None = None,
+    primitive: str = "CUBE",
+    size: float = 1.0,
+    location_x: float | None = None,
+    location_y: float | None = None,
+    location_z: float | None = None,
+) -> dict:
+    """Create a primitive object in the scene (transactional, undoable via previz_undo).
+
+    primitive must be one of: CUBE, SPHERE, CYLINDER, CONE, PLANE, TORUS, MONKEY, EMPTY.
+    `size` is the overall bounding extent (diameter) in world units — e.g. a
+    SPHERE of size 2 has radius 1. `location_*` are world-space meters; pass
+    None to keep the default placement for that axis. EMPTY creates a
+    transform-only object useful as a rig parent or marker."""
+    op = {"type": "object_create", "primitive": primitive, "size": size}
+    if name:
+        op["target"] = name
+    for axis, value in (("location_x", location_x), ("location_y", location_y), ("location_z", location_z)):
+        if value is not None:
+            op[axis] = value
+    return _intent(op, prompt=f"create {primitive}")
+
+
+@mcp.tool()
+def previz_delete_object(reference: str, recursive: bool = False) -> dict:
+    """Delete an object, optionally its whole child hierarchy (recursive=True).
+
+    WARNING: transactional undo CANNOT resurrect deleted geometry — restoring
+    deletions requires the .blend checkpoint. Prefer hiding (collection_set_visibility)
+    when unsure. Returns the names of everything removed."""
+    return _intent({"type": "object_delete", "target": reference, "recursive": recursive}, prompt=f"delete {reference}")
+
+
+@mcp.tool()
+def previz_rename_entity(reference: str, new_name: str) -> dict:
+    """Rename an object. Fails with existing-name collision hints instead of
+    silently creating 'name.001'. Atomic: restores the old name on failure.
+    NOTE: this bypasses previz_undo (renames are not transactional)."""
+    return _call("rename_entity", {"reference": reference, "new_name": new_name})
+
+
+@mcp.tool()
 def camera_set_lens(lens_mm: float, camera: str = "current_camera", subject: str | None = None, preserve_subject_framing: bool = False) -> dict:
     """Set camera focal length in millimeters (valid 8-600; e.g. 24 wide, 50 normal, 85 portrait).
     Optionally preserve a subject's framing by adjusting camera distance."""

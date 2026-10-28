@@ -20,6 +20,11 @@ ALLOWED = {
     "shot_product_closeup": ({"shot", "target", "hold_frames", "padding"}, {"target"}),
     "shot_actor_closeup": ({"shot", "target", "hold_frames", "padding"}, {"target"}),
     "shot_hold": ({"shot", "hold_frames"}, {"hold_frames"}),
+    "object_create": (
+        {"target", "primitive", "size", "location_x", "location_y", "location_z"},
+        {"primitive"},
+    ),
+    "object_delete": ({"target", "recursive"}, {"target"}),
     "previz_undo": (set(), set()),
     "previz_redo": (set(), set()),
 }

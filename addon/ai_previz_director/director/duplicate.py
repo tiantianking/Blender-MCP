@@ -3,7 +3,7 @@ from __future__ import annotations
 import bpy
 
 from .errors import ValidationError
-from .semantic import find_entity
+from .semantic import resolve_object
 
 
 def duplicate_object(
@@ -12,13 +12,7 @@ def duplicate_object(
     name: str | None = None,
     collection: str | None = None,
 ) -> dict:
-    try:
-        obj = find_entity(reference)
-    except Exception:
-        obj = bpy.data.objects.get(reference)
-
-    if not obj:
-        raise ValidationError(f"Object not found: '{reference}'")
+    obj = resolve_object(reference)
 
     # Linked copy vs Full copy
     new_obj = obj.copy()
@@ -47,5 +41,6 @@ def duplicate_object(
         "original": obj.name,
         "linked": linked,
         "collection": target_coll.name,
+        "location": [round(v, 6) for v in new_obj.location],
         "dimensions": [round(v, 6) for v in new_obj.dimensions],
     }

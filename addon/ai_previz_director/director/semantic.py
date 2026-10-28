@@ -117,3 +117,21 @@ def find_entity(reference: str | None, roles: set[str] | None = None) -> bpy.typ
         raise AmbiguousEntity(f"Ambiguous entity '{reference}': {[o.name for o in candidates]}")
     return candidates[0]
 
+
+def resolve_object(reference: str) -> bpy.types.Object:
+    """Shared object resolver for write paths: semantic lookup first (with
+    candidate hints and ambiguity propagation), then raw bpy.data fallback.
+
+    AmbiguousEntity and EntityNotFound-with-hints must reach the agent
+    intact — swallowing them costs the agent an extra discovery round."""
+    if not reference or not isinstance(reference, str):
+        raise ValidationError(f"Invalid object reference: {reference}")
+    try:
+        return find_entity(reference)
+    except EntityNotFound:
+        pass  # fall through to the raw bpy.data lookup below
+    obj = bpy.data.objects.get(reference)
+    if obj:
+        return obj
+    raise ValidationError(f"Object not found: '{reference}'")
+

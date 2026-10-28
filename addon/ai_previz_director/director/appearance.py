@@ -3,7 +3,7 @@ from __future__ import annotations
 import bpy
 
 from .errors import UnsupportedFeature, ValidationError
-from .semantic import find_entity
+from .semantic import find_entity, resolve_object
 
 
 def _meshes(root: bpy.types.Object) -> list[bpy.types.Object]:
@@ -47,13 +47,7 @@ def set_texture_tiling(
 ) -> dict:
     import math
 
-    try:
-        root = find_entity(target)
-    except Exception:
-        root = bpy.data.objects.get(target)
-
-    if not root:
-        raise ValidationError(f"Target object '{target}' not found")
+    root = resolve_object(target)
 
     meshes = _meshes(root) if root.type != "MESH" else [root]
     if not meshes:

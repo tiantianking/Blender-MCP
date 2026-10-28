@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import bpy
 
-from . import animation, appearance, camera, shot
+from . import animation, appearance, camera, primitives, shot
 from .errors import PrevizError, ValidationError
 from .intent_schema import validate_intent
 from .semantic import find_entity, entity_id
@@ -16,6 +16,13 @@ def _camera_ref(op: dict) -> str:
 
 def _apply(op: dict) -> dict:
     kind = op["type"]
+    if kind == "object_create":
+        location = None
+        if any(op.get(k) is not None for k in ("location_x", "location_y", "location_z")):
+            location = (op.get("location_x"), op.get("location_y"), op.get("location_z"))
+        return primitives.create_object(op.get("target"), op["primitive"], location, op.get("size", 1.0))
+    if kind == "object_delete":
+        return primitives.delete_object(op["target"], op.get("recursive", False))
     if kind == "camera_set_lens":
         return camera.set_lens(_camera_ref(op), op["lens_mm"], op.get("subject"), op.get("preserve_subject_framing", False))
     if kind == "camera_dolly":
