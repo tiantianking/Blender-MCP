@@ -63,6 +63,33 @@ class GeminiAgentInstructionTests(unittest.TestCase):
             self.assertEqual(result, ("127.0.0.1:9999", "token"))
             launch.assert_called_once()
 
+    def test_run_agentapi_resolves_direct_exe_or_tempfile(self):
+        with tempfile.TemporaryDirectory() as temp:
+            adapter = GeminiBlenderAgentAdapter(Path(temp))
+            # Test direct exe resolution logic
+            adapter.agentapi = Path(temp) / "agentapi.bat"
+            adapter.agentapi.write_text(
+                '@echo off\n"C:\\fake\\language_server.exe" agentapi %*\n', encoding="utf-8"
+            )
+            with patch("adapters.gemini_agent.Path.exists", return_value=True):
+                cmd = adapter._resolve_agentapi_cmd()
+                self.assertEqual(cmd, ["C:\\fake\\language_server.exe", "agentapi"])
+
+    def test_wait_for_result_incremental_read(self):
+        with tempfile.TemporaryDirectory() as temp:
+            adapter = GeminiBlenderAgentAdapter(Path(temp), timeout=2)
+            adapter.brain_dir = Path(temp) / "brain"
+            transcript = adapter.brain_dir / "conv-test" / ".system_generated/logs/transcript.jsonl"
+            transcript.parent.mkdir(parents=True)
+            # Write initial lines
+            transcript.write_text(
+                '{"source":"USER","type":"USER_INPUT","status":"DONE","content":"hello"}\n'
+                '{"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":"result payload"}\n',
+                encoding="utf-8",
+            )
+            result = adapter._wait_for_result("conv-test", after_row=1)
+            self.assertEqual(result, "result payload")
+
 
 if __name__ == "__main__":
     unittest.main()

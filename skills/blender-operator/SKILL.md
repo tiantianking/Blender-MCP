@@ -33,6 +33,7 @@ Typical stable suffixes include `get_addon_status`, `get_scene_info`, `look`, `s
 Prefer AI Previz Director only when its Bridge is healthy, connected, and authenticated. It is suitable for supported deterministic operations such as:
 
 - semantic scene state and paginated scene graphs;
+- object creation (primitives `CUBE`, `SPHERE`, `CYLINDER`, `CONE`, `PLANE`, `TORUS`, `MONKEY`, and `EMPTY`), recursive deletion, and atomic renaming;
 - object and batch transforms;
 - camera lens, dolly, orbit, framing, and follow operations;
 - shots and camera assignment;
@@ -43,7 +44,7 @@ Prefer AI Previz Director only when its Bridge is healthy, connected, and authen
 - clean captures and video export;
 - structured validation and transaction undo/redo.
 
-Typical stable suffixes include `previz_get_state`, `previz_get_scene_graph`, `previz_set_object_transform`, `previz_batch_transform`, `previz_capture_views`, `previz_import_file`, `previz_undo`, and `previz_redo`.
+Typical stable suffixes include `previz_get_state`, `previz_get_scene_graph`, `previz_create_object`, `previz_delete_object`, `previz_rename_entity`, `previz_set_object_transform`, `previz_batch_transform`, `previz_capture_views`, `previz_import_file`, `previz_undo`, and `previz_redo`.
 
 Director transactions protect only the operation classes they explicitly support. Never claim that they cover arbitrary `bpy` changes, deleted geometry, or an entire project.
 
@@ -67,6 +68,10 @@ Director transactions protect only the operation classes they explicitly support
 - Do not rely on `bpy.ops.ed.undo_push`; it is context-dependent and unreliable over MCP.
 - Never silently factory-reset, open/reload/revert another `.blend`, quit Blender, disable an add-on, or irreversibly delete scene data. Restoring a full checkpoint changes the active project and requires clear user authorization.
 - Validate references before multi-object operations. Prefer atomic batch tools where available.
+- Lifecycle operations safety rules:
+  - `previz_create_object`: `size` is strictly the bounding box extent (diameter in meters); runs in transaction and is undoable.
+  - `previz_delete_object`: permanent geometry removal; `previz_undo` CANNOT resurrect deleted mesh data (requires `.blend` checkpoint). If reversible hiding is desired, use `collection_set_visibility` instead.
+  - `previz_rename_entity`: atomic and collision-checked; prevents Blender silent `.001` auto-renaming. Not recorded in undo transactions.
 - If an operation fails, stop dependent work. Report the error and restore through the applicable recovery level rather than continuing on uncertain state.
 - Do not assume object, node, material, socket, or enum names are English. Inspect by type and read valid RNA identifiers.
 - Do not overwrite source `.blend`, render, texture, or export files unless the user explicitly selected that destination.
@@ -80,6 +85,9 @@ Director transactions protect only the operation classes they explicitly support
 | Connection/inventory | General MCP status and scene tools | Confirm protocol, add-on, file, scene, mode, and object counts |
 | Visual inspection | General `look` or Director capture | Inspect returned camera/viewport/orthographic images |
 | Semantic scene graph | Healthy Director state/graph tools | Check references, hierarchy, transforms, bounds, and pagination |
+| Primitive creation | Director `previz_create_object` | Verify created object name, primitive kind, evaluated bounding box, and location via `look` or `previz_capture_view` |
+| Object deletion | Director `previz_delete_object` | Re-query scene graph; note undo cannot resurrect deleted mesh geometry; prefer collection visibility hiding if tentative |
+| Object renaming | Director `previz_rename_entity` | Verify returned new_name; note renaming is atomic and collision-checked |
 | Object transforms | Director world/batch transform; fallback focused `bpy` | Independently read world transform/bounds and inspect visually |
 | Cameras/shots | Director camera/shot tools | Read current camera/shot and inspect camera view |
 | Collections/duplication | Director collection/duplicate tools | Re-query graph and collection membership |

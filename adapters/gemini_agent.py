@@ -7,6 +7,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import tempfile
 import threading
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -103,9 +104,70 @@ class GeminiBlenderAgentAdapter:
                     return data.get("id") or path.stem
         raise RuntimeError("当前 Blender 工程尚未注册到 Antigravity")
 
+    def _resolve_agentapi_cmd(self) -> list[str]:
+        # On Windows, agentapi.bat forwards through cmd.exe which enforces an 8191 character
+        # limit. If the underlying language_server.exe is discovered or specified in the batch file,
+        # invoke it directly with 'agentapi' to allow standard CreateProcess limits (~32k chars).
+        if os.name == "nt" and self.agentapi.suffix.lower() in {".bat", ".cmd"}:
+            try:
+                if self.agentapi.exists():
+                    batch_content = self.agentapi.read_text(encoding="utf-8", errors="replace")
+                    match = re.search(r'"([^"]*language_server\.exe)"', batch_content, re.IGNORECASE)
+                    if match and Path(match.group(1)).exists():
+                        return [match.group(1), "agentapi"]
+            except Exception:
+                pass
+        return [str(self.agentapi)]
+
+    def _run_agentapi_via_tempfile(self, args: list[str], env: dict[str, str]) -> dict:
+        prompt_arg = args[-1]
+        other_args = args[:-1]
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, suffix=".txt") as tf:
+            tf.write(prompt_arg)
+            temp_path = tf.name
+        try:
+            escaped_temp = temp_path.replace("'", "''")
+            ps_script = (
+                "[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
+                f"$prompt = Get-Content -Raw -Encoding UTF8 '{escaped_temp}'; "
+                f"& '{self.agentapi}' " + " ".join(f"'{a}'" for a in other_args) + " $prompt"
+            )
+            completed = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_script],
+                cwd=self.project_root,
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=45,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            raw = completed.stdout.strip() or completed.stderr.strip()
+            try:
+                payload = json.loads(raw)
+            except ValueError as exc:
+                raise RuntimeError(f"Antigravity 返回了无法识别的结果: {raw[-800:]}") from exc
+            if completed.returncode != 0 or payload.get("error"):
+                raise RuntimeError(payload.get("error") or raw[-800:])
+            return payload
+        finally:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
     def _run_agentapi(self, args: list[str], env: dict[str, str]) -> dict:
+        cmd_prefix = self._resolve_agentapi_cmd()
+        total_len = sum(len(a) for a in args) + sum(len(c) for c in cmd_prefix)
+        # Windows command line limit handling: If invoking a batch file on Windows
+        # and total length exceeds 7500 chars, cmd.exe would truncate.
+        # Fall back to PowerShell with temporary UTF-8 file (BUG-11).
+        if os.name == "nt" and cmd_prefix == [str(self.agentapi)] and total_len > 7500:
+            return self._run_agentapi_via_tempfile(args, env)
+
         completed = subprocess.run(
-            [str(self.agentapi), *args],
+            [*cmd_prefix, *args],
             cwd=self.project_root,
             env=env,
             capture_output=True,
@@ -135,13 +197,31 @@ class GeminiBlenderAgentAdapter:
         transcript = self.brain_dir / conversation_id / ".system_generated/logs/transcript.jsonl"
         deadline = time.monotonic() + self.timeout
         last_error = ""
+        current_rows: list[dict] = []
+        file_pos = 0
+
         while time.monotonic() < deadline:
             if transcript.exists():
                 try:
-                    rows = [json.loads(line) for line in transcript.read_text(encoding="utf-8").splitlines() if line]
-                except (OSError, ValueError):
-                    rows = []
-                for row in reversed(rows[after_row:]):
+                    size = transcript.stat().st_size
+                    if size < file_pos:
+                        file_pos = 0
+                        current_rows.clear()
+                    with open(transcript, "r", encoding="utf-8", errors="replace") as f:
+                        f.seek(file_pos)
+                        new_lines = f.readlines()
+                        file_pos = f.tell()
+                    for line in new_lines:
+                        line = line.strip()
+                        if line:
+                            try:
+                                current_rows.append(json.loads(line))
+                            except ValueError:
+                                pass
+                except OSError:
+                    pass
+
+                for row in reversed(current_rows[after_row:]):
                     content = row.get("content") or ""
                     if row.get("status") in {"ERROR", "FAILED"} and content:
                         last_error = content
